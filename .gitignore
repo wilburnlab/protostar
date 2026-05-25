@@ -1,0 +1,49 @@
+# --- MS data + bulk artifacts (canonical on OSC ESS; never committed) ---
+# Commit small curated tables as CSV; force-add (git add -f) an intentional parquet.
+*.raw
+*.mzML
+*.mzpeak
+*.scanmeta
+*.parquet
+
+# Data dir holds only small local dev subsets; keep the dir, ignore its contents.
+data/*
+!data/.gitkeep
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# --- Virtualenv / conda ---
+.venv/
+.env
+.envrc
+
+# --- Test / lint / coverage ---
+.pytest_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# --- Jupyter ---
+# notebooks/ is an exploration sandbox (not the source of record), but a notebook
+# MAY be committed when worth preserving; only checkpoints are ignored.
+.ipynb_checkpoints/
+
+# --- Session / local state ---
+session_notes.md
+.osc_helper/
+
+# --- Editor / OS ---
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store

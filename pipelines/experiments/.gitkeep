@@ -1,0 +1,4 @@
+# One reproducible script per solidified experiment lands here.
+# Each consumes the partitioned-Parquet intermediates from stage 30, obeys the
+# canonical MS1 ion-model checklist (CLAUDE.md), uses constellation.core.optim DE
+# (never scipy), and writes parquet + figures that a results/ chapter then synthesizes.

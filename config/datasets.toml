@@ -1,0 +1,53 @@
+# ProteomeTools source datasets — the manifest source for `pipelines/00_fetch_raw.py`.
+#
+# The fetch stage queries the ProteomeXchange / PRIDE API per `accession` to obtain
+# the authoritative .raw file list and published checksums, then downloads + verifies.
+# The fields below are the stable, human-curated facts; per-file lists + checksums are
+# fetched at runtime (not hand-maintained here).
+
+[defaults]
+# Canonical data root on OSC ESS. Raw files land under <data_root>/raw/<dataset>/.
+data_root = "/fs/ess/PAS2254/DBW/protostar/data"
+# Optional local seed source (existing OSC copy) for `--seed-from`.
+seed_from = "/fs/ess/PAS2254/Cartographer_Data/Unmodified/ProteomeTools"
+file_kind = "raw"          # source of truth is Thermo .raw (not mzML)
+
+# Reference spectral libraries (published, annotated .msp).
+[libraries]
+source_url = "https://www.proteometools.org/index.php?id=53"
+# Populate `files = [...]` after inspecting the download page; ingested via massspec.io.msp.
+
+# --- Datasets -------------------------------------------------------------------
+
+[datasets.Zolg2017]
+publication = "Zolg et al., Nature Methods, 2017"
+accession   = "PXD004732"
+n_pools     = 365           # pools (each acquired as 3 injections / .raw files)
+
+[datasets.Gessulat2019]
+publication = "Gessulat et al. (Prosit), Nature Methods, 2019"
+accession   = "PXD010595"
+n_pools     = 222
+
+[datasets.Wilhelm2021]
+publication = "Wilhelm et al., Nature Communications, 2021"
+accession   = "PXD021013"
+n_pools     = 481           # 421 searched; 60 noincl
+
+# --- Fragmentation modes (per-scan property; derived from scan filter strings) --
+# Recorded here for documentation; mode is assigned per scan downstream, not by
+# pre-splitting files. Each pool's 3 injections interleave these methods.
+#
+#   injection            modes
+#   DDA-1h-R2            HCD28_DDA_Orbi, CID35_DDA_IT
+#   2xIT_2xHCD-1h-R1     HCD20/23_Tgted_Orbi, HCD28_Tgted_IT, CID35_Tgted_IT
+#   3xHCD-1h-R1          HCD25/30/35_Tgted_Orbi
+#
+# Targeted splits from one injection share MS1; DDA MS1 is a separate injection.
+[modes]
+names = [
+    "CID35_DDA_IT", "CID35_Tgted_IT",
+    "HCD20_Tgted_Orbi", "HCD23_Tgted_Orbi", "HCD25_Tgted_Orbi",
+    "HCD28_DDA_Orbi", "HCD28_Tgted_IT",
+    "HCD30_Tgted_Orbi", "HCD35_Tgted_Orbi",
+]

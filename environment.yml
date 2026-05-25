@@ -1,0 +1,27 @@
+# protostar conda environment.
+#
+# External / reproducible path (this file): creates a self-contained `protostar`
+# env that pulls Constellation from PyPI.
+#
+#     conda env create -f environment.yml
+#     conda activate protostar
+#
+# Lab dev path (recommended for Wilburn Lab): reuse the shared `constellation`
+# conda env, which already has Constellation installed editable, then add this
+# repo and the OSC helpers editable on top:
+#
+#     conda activate constellation
+#     pip install -e .            # protostar
+#     pip install -e ~/projects/constellation[ms]   # if not already editable
+#     pip install -e ~/projects/osc_helper          # OSC job/sync helpers
+#
+# Python is pinned to 3.12 (<3.13) to match Constellation (koinapy + PyTorch 2.5.x).
+
+name: protostar
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+  - pip:
+      - -e .[dev]
