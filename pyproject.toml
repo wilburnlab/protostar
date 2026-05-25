@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "protostar"
+version = "0.1.0.dev0"
+description = "ProteomeTools Statistical Research — reproducible open-science re-analysis built on Constellation"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Wilburn Lab" }]
+keywords = ["proteomics", "mass-spectrometry", "ProteomeTools", "constellation"]
+
+# Core dependency: the Constellation platform with its mass-spec extras.
+# All model/likelihood/peak/scoring code (incl. the Counter model) lives there.
+dependencies = [
+    "constellation-bio[ms]",
+]
+
+[project.optional-dependencies]
+# OSC (Ohio Supercomputer Center) job/sync helpers — lab-internal, installed
+# editable from ~/projects/osc_helper. Not required for the reproducible path.
+osc = ["osc_helper"]
+dev = ["pytest", "ruff"]
+
+[tool.setuptools.packages.find]
+include = ["protostar*"]
+exclude = ["pipelines*", "config*", "docs*", "results*", "notebooks*", "data*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

@@ -1,0 +1,17 @@
+# OSC (Ohio Supercomputer Center) paths + account.
+# Mirrors ~/.osc_helper/config.toml; consumed by the [osc] extra (osc_helper) and
+# the SLURM wrappers under pipelines/.
+
+[osc]
+username     = "<osc-user>"
+account      = "<allocation>"        # compute allocation
+home_account = "<home-allocation>"        # home filesystem allocation
+cluster      = "cardinal"       # default CPU cluster; Ascend only for heavy GPU
+
+[paths]
+home    = "/users/<home-allocation>/<user>"
+ess     = "/fs/ess/<allocation>"
+project = "/fs/ess/<allocation>/<group>/protostar"          # notebooks/, scripts/, results/, logs/
+data    = "/fs/ess/<allocation>/<group>/protostar/data"     # raw/, mzpeak/, intermediates/
+# Existing OSC copy of the raw data, usable as a --seed-from source for fetch.
+seed    = "/path/to/ProteomeTools"
