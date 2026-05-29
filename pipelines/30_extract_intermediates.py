@@ -13,7 +13,9 @@ from __future__ import annotations
 
 
 def main() -> None:
-    raise NotImplementedError("Stage 30 (extract_intermediates) not yet implemented — scaffold only.")
+    raise NotImplementedError(
+        "Stage 30 (extract_intermediates) not yet implemented — scaffold only."
+    )
 
 
 if __name__ == "__main__":

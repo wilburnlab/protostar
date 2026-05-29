@@ -31,3 +31,11 @@ exclude = ["pipelines*", "config*", "docs*", "results*", "notebooks*", "data*"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]  # pycodestyle, pyflakes, warnings, import-sorting
+ignore = ["E501"]              # ruff format wraps code; long URLs / string literals are fine
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["network: hits live PRIDE / Zenodo endpoints (run with --run-network)"]
