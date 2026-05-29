@@ -12,6 +12,6 @@ cluster      = "cardinal"       # default CPU cluster; Ascend only for heavy GPU
 home    = "/users/<home-allocation>/<user>"
 ess     = "/fs/ess/<allocation>"
 project = "/fs/ess/<allocation>/<group>/protostar"          # notebooks/, scripts/, results/, logs/
-data    = "/fs/ess/<allocation>/<group>/protostar/data"     # raw/, mzpeak/, intermediates/
+data    = "/fs/ess/<allocation>/<group>/protostar/data"     # raw/, search/, proc/, libraries/, status/
 # Existing OSC copy of the raw data, usable as a --seed-from source for fetch.
 seed    = "/path/to/ProteomeTools"

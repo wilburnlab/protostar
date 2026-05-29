@@ -60,9 +60,9 @@ conda activate protostar
 ## Pipeline (raw-first)
 
 ```
-00_fetch_raw         download .raw from PRIDE + verify checksums (resumable/repairable)
-10_build_mzpeak      .raw -> mzpeak Parquet + scanmeta (rebuilt fresh via Constellation)
-15_reference_library ingest published .msp libraries (+ optional EncyclopeDIA/Scribe re-search)
+00_fetch_raw         download .raw + MaxQuant search zips from PRIDE + verify (resumable/repairable)
+10_convert_raw       .raw -> parquet bundle (proc/) + scanmeta (rebuilt fresh via Constellation)
+15_reference_library fetch + extract published .msp libraries from Zenodo
 20_build_metadata    acquisition time table (datetime + instrument + acquisition order)
 30_extract_intermediates   common MS1/MS2 extracted chromatograms (PROCAL + library peptides)
 experiments/         one reproducible script per solidified analysis -> parquet + figures

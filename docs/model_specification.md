@@ -13,7 +13,7 @@ developed through notebooks nb13–nb42b on the ProteomeTools synthetic peptide 
 >    [`constellation_contributions.md`](constellation_contributions.md). protostar experiments
 >    import and validate it.
 > 2. **Raw-first data construction.** Observations are now built from Thermo `.raw` via
->    Constellation readers (rebuilt mzpeak + scanmeta), not from pre-split mzML / FragPipe
+>    Constellation readers (rebuilt `proc/` convert bundles + scanmeta), not from pre-split mzML / FragPipe
 >    inputs. The model is unchanged; only the ingestion path differs. References to
 >    `extract_ms1_chromatogram()` below denote the equivalent Constellation extraction.
 >
