@@ -12,8 +12,8 @@ record.
 
 | # | Capability | Target location in Constellation | Drives which protostar stage | Status | Notes |
 |---|---|---|---|---|---|
-| 1 | Thermo `.raw` reader | `core.io` / `massspec.io` | `10_build_mzpeak`, `20_build_metadata` | needed (verify) | Env ships `pythonnet` + Thermo CommonCore DLLs; massspec CLAUDE.md lists `readers/` as TODO. **First action: confirm whether a working `.raw` reader already exists.** |
-| 2 | mzpeak Parquet writer/reader + scanmeta (IIT/TIC/filter_string) | `massspec.io` | `10_build_mzpeak` | needed | Cartographer's mzpeak was an internal Parquet cache; rebuild fresh under Constellation. Per-scan `filter_string` needed for per-scan mode assignment. |
+| 1 | Thermo `.raw` reader (`ThermoReader`, `convert`) | `massspec.io.thermo` | `10_convert_raw`, `20_build_metadata` | **landed** | Verified production-ready: `constellation massspec convert` CLI + `ThermoReader`/`convert_batch`; centroid (per-peak resolution/noise/baseline) + profile (raw FT grid). |
+| 2 | Convert bundle: `peaks.parquet` + `scan_metadata.parquet` (IIT/TIC/`filter_string`) + `acquisition_metadata.parquet` + `manifest.json` | `massspec.io.thermo` | `10_convert_raw` | **landed** | `convert`/`convert_batch`; RT-binned row groups; source SHA-256 in manifest; per-scan `filter_string` recovers fragmentation mode. ("mzpeak" retired — no HUPO-PSI standard exists.) |
 | 3 | MS1/MS2 chromatogram extraction + `rt_range` predicate pushdown + windowed MS1 scoring | `massspec` | `30_extract_intermediates` | needed | `MS1TensorResult` + `rt_range` pushdown were pruned from Cartographer (see massspec CLAUDE.md "worth surfacing"). |
 | 4 | `HyperEMGPeak` (+ `WarpedEMGPeak`, `SplinePeak`) | `core.stats.peaks` | experiments (peak fitting) | needed | Only `GaussianPeak`/`EMGPeak` shipped; `core.optim.DifferentialEvolution` is available, so these are the next peak-numerics PR. |
 | 5 | `GlobalCalibration` module (α₀/α₁/d_mz/ρ_R/ν_mz/α_mz, per file) | `massspec` | `04_procal_calibration` experiment | needed | Spec: Counter port doc §Architecture. |
@@ -22,6 +22,7 @@ record.
 | 8 | Seeded/global-agnostic scoring function + identification Λ (Counter v2 §10) | `massspec` | `05_counter_validation` | needed | `Λ_q = L_P(Q) − L_P(Q\{q})`. |
 | 9 | Laplace credible intervals on N_total | `massspec` | uncertainty experiments | needed | 6×6 Hessian at MAP; well-conditioned now that α is stable. |
 | 10 | EncyclopeDIA / Scribe search wrapper (reads `.raw` natively) | `thirdparty` + `massspec.io` | `15_reference_library` (optional re-search) | needed | EncyclopeDIA adapter (`massspec.io.encyclopedia`) + `thirdparty` registry exist; a search-invocation wrapper may need adding. |
+| 11 | MaxQuant search-output reader (`txt/` export: `msms`/`evidence`/`peptides`/`parameters`/…) | `massspec.io.maxquant` | search↔raw association (future) | needed | Confirmed by `pipelines/probe_search_format.py`: all three datasets' PRIDE SEARCH zips are MaxQuant combined-`txt` exports. Needed to associate identifications with acquisitions (out of scope for the data-layer session). |
 
 ## Reference architecture
 

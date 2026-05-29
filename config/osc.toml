@@ -12,6 +12,6 @@ cluster      = "cardinal"       # default CPU cluster; Ascend only for heavy GPU
 home    = "/users/PAS1309/damienbwilburn"
 ess     = "/fs/ess/PAS2254"
 project = "/fs/ess/PAS2254/DBW/protostar"          # notebooks/, scripts/, results/, logs/
-data    = "/fs/ess/PAS2254/DBW/protostar/data"     # raw/, mzpeak/, intermediates/
+data    = "/fs/ess/PAS2254/DBW/protostar/data"     # raw/, search/, proc/, libraries/, status/
 # Existing OSC copy of the raw data, usable as a --seed-from source for fetch.
 seed    = "/fs/ess/PAS2254/Cartographer_Data/Unmodified/ProteomeTools"
