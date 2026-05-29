@@ -12,10 +12,23 @@ data_root = "/fs/ess/<allocation>/<group>/protostar/data"
 seed_from = "/path/to/ProteomeTools"
 file_kind = "raw"          # source of truth is Thermo .raw (not mzML)
 
-# Reference spectral libraries (published, annotated .msp).
+# Reference spectral libraries (published, annotated .msp). Fetched + extracted by
+# `pipelines/15_reference_library.py` from the Zenodo archive of the 2019 release.
+# One zip per analyzer×fragmentation×NCE mode; `.msp` files live inside. md5 + size
+# come from the Zenodo API at fetch time (not hand-maintained here).
 [libraries]
-source_url = "https://www.proteometools.org/index.php?id=53"
-# Populate `files = [...]` after inspecting the download page; ingested via massspec.io.msp.
+source_url    = "https://www.proteometools.org/index.php?id=53"
+zenodo_record = "15705607"
+files = [
+    "FTMS_HCD_20_annotated_2019-11-12.zip",
+    "FTMS_HCD_23_annotated_2019-11-12.zip",
+    "FTMS_HCD_25_annotated_2019-11-12.zip",
+    "FTMS_HCD_28_annotated_2019-11-12.zip",
+    "FTMS_HCD_30_annotated_2019-11-12.zip",
+    "FTMS_HCD_35_annotated_2019-11-12.zip",
+    "ITMS_CID_35_annotated_2019-11-13.zip",
+    "ITMS_HCD_28_annotated_2019-11-13.zip",
+]
 
 # --- Datasets -------------------------------------------------------------------
 

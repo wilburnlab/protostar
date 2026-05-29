@@ -569,8 +569,8 @@ progenitors in the panel.
    candidate for sensitivity analysis. Retires once a validated View B kernel
    model is in hand.
 3b. **Intensity floor `I_{floor}` as metadata** (§5.3). Currently a per-notebook
-    empirical value (`≈ 4000 counts` for DDA 60K Zolg2017). Proper home: mzpeak
-    metadata, characterized per-file or per-mode. Affects whether the
+    empirical value (`≈ 4000 counts` for DDA 60K Zolg2017). Proper home: per-file
+    `proc/` bundle metadata, characterized per-file or per-mode. Affects whether the
     left-censored form (Eq 13) is needed on top of the Poisson zero-event (Eq 12).
 4. **Per-cell "meaningful prediction" threshold** (§5.1). Which cells enter the zero
    term? Proposal: cells where `I_{pred,c}^{total} > ε · I_{floor}` for some small

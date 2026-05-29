@@ -38,7 +38,7 @@ entry and **never** ship inside a `results/` record.
 
 | Capability | Home |
 |---|---|
-| Thermo `.raw` / mzpeak readers, scanmeta/IIT access | `constellation` (`core.io` / `massspec`) |
+| Thermo `.raw` → parquet-bundle reader/writer (`convert`/`convert_batch`), scanmeta/IIT access | `constellation` (`massspec.io.thermo`) |
 | MS1/MS2 chromatogram extraction + windowed scoring | `constellation.massspec` |
 | Peak shapes (`HyperEMGPeak`, …) | `constellation.core.stats.peaks` |
 | Optimizers (`DifferentialEvolution`, `LBFGSOptimizer`) | `constellation.core.optim` |
@@ -66,7 +66,7 @@ protostar/
 │   ├── fetch/ convert/ library/ metadata/ intermediates/ experiments/
 ├── pipelines/                # CLI entry points + OSC/SLURM wrappers (one stage per file)
 │   ├── 00_fetch_raw.py            # fresh download + hash verify; --seed-from optional
-│   ├── 10_build_mzpeak.py         # .raw -> mzpeak, rebuilt from scratch
+│   ├── 10_convert_raw.py          # .raw -> parquet bundle (proc/), rebuilt from scratch
 │   ├── 15_reference_library.py    # ingest published .msp (+ optional re-search)
 │   ├── 20_build_metadata.py       # acquisition time table from .raw headers
 │   ├── 30_extract_intermediates.py
@@ -92,7 +92,11 @@ The **source of truth is the `.raw` Thermo files.** This is a hard departure fro
 analysis (which keyed off mzML files and FragPipe searches) — none of that carries over.
 
 - **Datasets & accessions:** Zolg2017 = `PXD004732`, Gessulat2019 = `PXD010595`,
-  Wilhelm2021 = `PXD021013`. ~9,612 acquisitions, ~7.8 TB total.
+  Wilhelm2021 = `PXD021013`. **4,213 raw acquisitions, ~2.9 TB** (RAW: 1460 / 888 / 1865;
+  PRIDE-manifest counts — see `config/manifests/`). Each acquisition has one paired MaxQuant
+  SEARCH zip (~110 GB more). NB: this corrects the earlier "~9,612 / ~7.8 TB" estimate, which
+  appears to have included the out-of-scope *modified*-peptide pools. Wilhelm2021 publishes no
+  checksums, so its files are size-verified only.
 - **Reference library:** the published ProteomeTools `.msp` libraries from
   <https://www.proteometools.org/index.php?id=53>, ingested via `massspec.io.msp` — these
   replace the old individual searches. Optionally re-searched with EncyclopeDIA/Scribe on the
@@ -102,12 +106,14 @@ analysis (which keyed off mzML files and FragPipe searches) — none of that car
   dataset's `.raw` list + published checksums, downloads missing files, verifies each, and
   re-fetches on mismatch (resumable + repairable; `--dry-run` reports present/missing/corrupt).
   Repo scripts reflect *what a fresh user would do*.
-- **`--seed-from <dir>` (local time-saver, not the reproducible path):** hash-matches files
-  already on ESS (e.g. `/path/to/ProteomeTools/{ds}/raw/`)
-  and hardlinks/moves them in instead of downloading. Equivalent to a manual `mv`.
-- **Canonical data root (ESS):** `/fs/ess/<allocation>/<group>/protostar/data/raw/{dataset}/`. mzpeak
-  caches are **rebuilt from scratch** with the latest Constellation reader (no reuse of prior
-  caches) for downstream consistency.
+- **`--seed-from <dir>` (local time-saver, not the reproducible path):** matches files already
+  on ESS (e.g. `/path/to/ProteomeTools/{ds}/raw/`) by
+  name+size (SHA-1 with `--verify`) and relocates them instead of downloading. Default
+  `--seed-mode move` (empties the source); `hardlink`/`copy` available.
+- **Canonical data root (ESS):** `/fs/ess/<allocation>/<group>/protostar/data/` with
+  `raw/{dataset}/`, `search/{dataset}/`, `proc/{dataset}/{centroid,profile}/<stem>/`,
+  `libraries/<mode>/`. The `proc/` parquet bundles are **rebuilt from scratch** with the
+  latest Constellation reader (no reuse of prior caches) for downstream consistency.
 - **Fragmentation mode is a per-scan property** derived from the scan filter string /
   scanmeta — not from pre-split files. Each pool was acquired as 3 injections (`.raw` files);
   the 9 modes (CID35/HCD20–35 × DDA/Targeted × IT/Orbi) interleave within them.
@@ -188,8 +194,14 @@ censored scaling, binary-mixture mis-specification; do not resurrect it.
 
 ## Status
 
-Scaffold phase. The pipeline stages and experiment scripts are stubs; the immediate deliverable
-is this architecture. Next: implement `00_fetch_raw` (manifest + verify), confirm
-Constellation's Thermo `.raw` reader, then `10_build_mzpeak` → `15_reference_library` →
-`20_build_metadata` → `30_extract_intermediates`, driving the Counter modules into Constellation
-as the experiments need them.
+Data layer implemented. `00_fetch_raw` (PRIDE v3 manifest + resumable download + verify +
+`--seed-from` relocation), `10_convert_raw` (drives `convert_batch` into `proc/`, centroid +
+profile, resume + SLURM sharding), and `15_reference_library` (Zenodo `.msp` fetch + extract)
+are written and committed; the per-dataset expected manifests live in `config/manifests/`. The
+SEARCH files are confirmed MaxQuant (`probe_search_format.py`) → ledger #11 targets a
+`massspec.io.maxquant` reader. Constellation's Thermo `.raw` reader is verified production-ready
+(ledger #1/#2 landed).
+
+Next (run on OSC): seed → download → convert (centroid all three, then the profile pass after a
+1–2 file validation). Then `20_build_metadata` → `30_extract_intermediates`, driving the Counter
+modules into Constellation as the experiments need them.

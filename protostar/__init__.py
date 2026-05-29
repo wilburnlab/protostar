@@ -12,11 +12,11 @@ contributed upstream to Constellation, never written here. See ``CLAUDE.md``.
 
 Subpackages
 -----------
-fetch          Build the expected-file manifest; fresh-download + hash-verify
-               ``.raw`` files (resumable / repairable); optional seed-from-local.
-convert        Drive ``.raw`` -> mzpeak Parquet + scanmeta via Constellation.
-library        Ingest the published ProteomeTools ``.msp`` reference libraries;
-               optional EncyclopeDIA/Scribe re-search of the local ``.raw``.
+fetch          Build the expected-file manifest; fresh-download + verify ``.raw``
+               and search files (resumable / repairable); optional seed-from-local.
+convert        Drive ``.raw`` -> parquet bundle (``proc/``) + scanmeta via Constellation.
+library        Fetch + extract the published ProteomeTools ``.msp`` reference
+               libraries from Zenodo (ingestion/association is a later task).
 metadata       Curate the acquisition time table (datetime + instrument + order).
 intermediates  Drive MS1/MS2 chromatogram extraction (Constellation calls).
 experiments    Shared experiment-harness utilities (IO, plotting helpers).
