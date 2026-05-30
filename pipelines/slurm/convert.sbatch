@@ -14,7 +14,9 @@
 #   sbatch --array=0-19 --export=ALL,DATASET=Wilhelm2021,N_SHARDS=20 pipelines/slurm/convert.sbatch
 #
 #SBATCH --job-name=protostar-convert
-#SBATCH --account=<allocation>
+# Set your OSC allocation — uncomment + edit, or pass `--account=...` on the sbatch command line
+# (otherwise SLURM uses your default project):
+# #SBATCH --account=PASxxxx
 #SBATCH --cluster=cardinal
 #SBATCH --nodes=1
 #SBATCH --ntasks=1

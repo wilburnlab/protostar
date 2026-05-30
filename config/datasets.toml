@@ -6,10 +6,13 @@
 # fetched at runtime (not hand-maintained here).
 
 [defaults]
-# Canonical data root on OSC ESS. Raw files land under <data_root>/raw/<dataset>/.
-data_root = "/fs/ess/<allocation>/<group>/protostar/data"
-# Optional local seed source (existing OSC copy) for `--seed-from`.
-seed_from = "/path/to/ProteomeTools"
+# Data root for all stages; files land under <data_root>/{raw,search,proc,libraries}/<dataset>/.
+# Defaults to ./data. Override per-environment (the lab points it at project ESS storage) with
+# --data-root, $PROTOSTAR_DATA_ROOT, or [paths].data in a local config/osc.toml.
+data_root = "data"
+# Optional default for `--seed-from` (an existing local ProteomeTools .raw copy). Unset here;
+# set via --seed-from, $PROTOSTAR_SEED_FROM, or [paths].seed in config/osc.toml.
+# seed_from = "/path/to/ProteomeTools"
 file_kind = "raw"          # source of truth is Thermo .raw (not mzML)
 
 # Reference spectral libraries (published, annotated .msp). Fetched + extracted by

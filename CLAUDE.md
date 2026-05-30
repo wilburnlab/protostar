@@ -107,13 +107,15 @@ analysis (which keyed off mzML files and FragPipe searches) — none of that car
   re-fetches on mismatch (resumable + repairable; `--dry-run` reports present/missing/corrupt).
   Repo scripts reflect *what a fresh user would do*.
 - **`--seed-from <dir>` (local time-saver, not the reproducible path):** matches files already
-  on ESS (e.g. `/path/to/ProteomeTools/{ds}/raw/`) by
-  name+size (SHA-1 with `--verify`) and relocates them instead of downloading. Default
-  `--seed-mode move` (empties the source); `hardlink`/`copy` available.
-- **Canonical data root (ESS):** `/fs/ess/<allocation>/<group>/protostar/data/` with
-  `raw/{dataset}/`, `search/{dataset}/`, `proc/{dataset}/{centroid,profile}/<stem>/`,
-  `libraries/<mode>/`. The `proc/` parquet bundles are **rebuilt from scratch** with the
-  latest Constellation reader (no reuse of prior caches) for downstream consistency.
+  on disk (an existing ProteomeTools `.raw` copy; path from `--seed-from`,
+  `$PROTOSTAR_SEED_FROM`, or `config/osc.toml`) by name+size (SHA-1 with `--verify`) and
+  relocates them instead of downloading. Default `--seed-mode move` (empties the source);
+  `hardlink`/`copy` available.
+- **Canonical data root:** `<data_root>/` (set via `--data-root`, `$PROTOSTAR_DATA_ROOT`, or
+  `config/osc.toml` — the lab points it at project ESS storage) with `raw/{dataset}/`,
+  `search/{dataset}/`, `proc/{dataset}/{centroid,profile}/<stem>/`, `libraries/<mode>/`. The
+  `proc/` parquet bundles are **rebuilt from scratch** with the latest Constellation reader
+  (no reuse of prior caches) for downstream consistency.
 - **Fragmentation mode is a per-scan property** derived from the scan filter string /
   scanmeta — not from pre-split files. Each pool was acquired as 3 injections (`.raw` files);
   the 9 modes (CID35/HCD20–35 × DDA/Targeted × IT/Orbi) interleave within them.
@@ -179,10 +181,11 @@ censored scaling, binary-mixture mis-specification; do not resurrect it.
 
 ## OSC operational notes
 
-- **Project dir (ESS):** `/fs/ess/<allocation>/<group>/protostar/` (data root, results, job logs). Do
-  **not** store project files in OSC home (strict storage/file-count limits).
-- **Account/cluster:** account `<allocation>`, home account `<home-allocation>`, default cluster Cardinal
-  (CPU); Ascend only for heavy GPU. Config in `config/osc.toml` (mirrors `~/.osc_helper/`).
+- **Project dir:** keep the data root, results, and job logs on project ESS storage — **not**
+  OSC home (strict storage/file-count limits). Concrete paths/allocations live in a local
+  `config/osc.toml` (gitignored; copy `config/osc.example.toml` and fill in).
+- **Account/cluster:** set your compute + home allocations and cluster in `config/osc.toml`
+  (mirrors `~/.osc_helper/`); default cluster Cardinal (CPU), Ascend only for heavy GPU.
 - **`osc_helper`** (optional `[osc]` extra) provides SSH / SLURM / rsync:
   `load_config()`, `ssh.check_connection(host)`, `jobs.{write_job_script,submit_job,job_status}`,
   `sync.push_code(...)` (syncs to OSC **home**, not ESS — `cp` to ESS manually).

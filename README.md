@@ -69,8 +69,8 @@ experiments/         one reproducible script per solidified analysis -> parquet 
 results/             curated "textbook" records synthesizing the confident findings
 ```
 
-Large data and bulk artifacts are canonical on OSC ESS
-(`/fs/ess/<allocation>/<group>/protostar/`); only small dev subsets live locally. The curated
+Large data and bulk artifacts are canonical on OSC ESS project storage (paths configured in
+a local `config/osc.toml`); only small dev subsets live locally. The curated
 `results/` records and their figures are committed.
 
 ## Status

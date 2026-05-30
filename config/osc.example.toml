@@ -1,0 +1,17 @@
+# Lab/user-specific OSC settings. Copy to `config/osc.toml` (gitignored) and fill in your
+# values. The pipelines read [paths].data as the default data root and [paths].seed as the
+# default --seed-from source; `osc_helper` reads [osc] for SSH/SLURM/rsync.
+[osc]
+username     = "<your-osc-username>"
+account      = "<compute-allocation>"   # e.g. PASxxxx
+home_account = "<home-allocation>"      # e.g. PASxxxx
+cluster      = "cardinal"               # default CPU cluster; Ascend only for heavy GPU
+
+[paths]
+home    = "/users/<home-allocation>/<your-osc-username>"
+ess     = "/fs/ess/<compute-allocation>"
+project = "/fs/ess/<compute-allocation>/<group>/protostar"       # results, job logs
+data    = "/fs/ess/<compute-allocation>/<group>/protostar/data"  # raw/ search/ proc/ libraries/ status/
+# An existing local copy of the ProteomeTools .raw files, used as a --seed-from source so
+# fetch relocates instead of re-downloading.
+seed    = "<path-to-existing-ProteomeTools-raw>"

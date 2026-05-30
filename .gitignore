@@ -37,6 +37,9 @@ htmlcov/
 # MAY be committed when worth preserving; only checkpoints are ignored.
 .ipynb_checkpoints/
 
+# --- Local config (lab-specific; copy from config/osc.example.toml) ---
+config/osc.toml
+
 # --- Session / local state ---
 session_notes.md
 .osc_helper/

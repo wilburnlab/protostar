@@ -18,7 +18,7 @@ Usage::
     python pipelines/00_fetch_raw.py --build-manifest --dataset all
     python pipelines/00_fetch_raw.py --dataset Zolg2017 --dry-run
     python pipelines/00_fetch_raw.py --dataset Zolg2017 \\
-        --seed-from /path/to/ProteomeTools
+        --seed-from /path/to/existing/ProteomeTools   # or bare --seed-from (uses config)
     python pipelines/00_fetch_raw.py --dataset Zolg2017          # download the rest
 """
 

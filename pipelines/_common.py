@@ -12,6 +12,7 @@ The scripts assume ``protostar`` is importable (``pip install -e .`` per
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import tomllib
 from pathlib import Path
@@ -28,6 +29,7 @@ from constellation.core.progress import (  # noqa: E402 — after sys.path boots
 
 DEFAULT_CONFIG = REPO_ROOT / "config" / "datasets.toml"
 DEFAULT_MANIFEST_DIR = REPO_ROOT / "config" / "manifests"
+DEFAULT_OSC_CONFIG = REPO_ROOT / "config" / "osc.toml"
 
 
 def load_config(path: "str | Path | None" = None) -> dict:
@@ -41,14 +43,37 @@ def dataset_specs(config: dict) -> dict[str, dict]:
     return dict(config.get("datasets", {}))
 
 
+def load_osc_config(path: "str | Path | None" = None) -> dict:
+    """Lab-specific OSC settings from ``config/osc.toml`` (gitignored; optional).
+
+    Returns ``{}`` when absent — e.g. a fresh public clone that ships only
+    ``config/osc.example.toml``.
+    """
+    p = Path(path) if path is not None else DEFAULT_OSC_CONFIG
+    if not p.exists():
+        return {}
+    with open(p, "rb") as f:
+        return tomllib.load(f)
+
+
 def data_root(config: dict, override: "str | Path | None" = None) -> Path:
+    """Resolve the data root: --data-root > $PROTOSTAR_DATA_ROOT > osc.toml > datasets.toml."""
     if override is not None:
         return Path(override)
+    if env := os.environ.get("PROTOSTAR_DATA_ROOT"):
+        return Path(env)
+    if osc := load_osc_config().get("paths", {}).get("data"):
+        return Path(osc)
     return Path(config.get("defaults", {}).get("data_root", "data"))
 
 
 def seed_from_default(config: dict) -> str | None:
-    return config.get("defaults", {}).get("seed_from")
+    """--seed-from default: $PROTOSTAR_SEED_FROM > osc.toml [paths].seed > datasets.toml."""
+    return (
+        os.environ.get("PROTOSTAR_SEED_FROM")
+        or load_osc_config().get("paths", {}).get("seed")
+        or config.get("defaults", {}).get("seed_from")
+    )
 
 
 def resolve_datasets(values: "list[str] | None", config: dict) -> list[str]:
