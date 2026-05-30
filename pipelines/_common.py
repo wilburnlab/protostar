@@ -21,7 +21,37 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from constellation.core.progress import (  # noqa: E402 — after sys.path bootstrap
+
+def _pin_env_libstdcxx() -> None:
+    """Put the conda env's libstdc++ first on LD_LIBRARY_PATH before any
+    constellation import pulls in sqlite3 -> libicui18n -> libstdc++.
+
+    On HPC nodes, ``module load miniconda3`` puts an older spack/system libstdc++
+    ahead of the env's, so the env's libicui18n (which needs ``CXXABI_1.3.15``)
+    fails to resolve. LD_LIBRARY_PATH is read once at process start, so the only
+    fix is to re-exec (sentinel-guarded, once) with the env lib prepended. No-op
+    when it is already first, when LD_LIBRARY_PATH is empty (clean local
+    resolution), or off-conda. Mirrors constellation's CLI self-heal for the
+    ``python pipelines/...`` entry path.
+    """
+    prefix = os.environ.get("CONDA_PREFIX")
+    if not prefix or os.environ.get("_PROTOSTAR_LIBSTDCXX_PINNED"):
+        return
+    env_lib = Path(prefix) / "lib"
+    if not (env_lib / "libstdc++.so.6").is_file():
+        return
+    env_lib_str = str(env_lib)
+    parts = [p for p in os.environ.get("LD_LIBRARY_PATH", "").split(":") if p]
+    if not parts or parts[0] == env_lib_str:
+        return  # nothing ahead of the env lib to shadow it
+    os.environ["LD_LIBRARY_PATH"] = ":".join([env_lib_str, *[p for p in parts if p != env_lib_str]])
+    os.environ["_PROTOSTAR_LIBSTDCXX_PINNED"] = "1"
+    os.execv(sys.executable, [sys.executable, *sys.argv])
+
+
+_pin_env_libstdcxx()
+
+from constellation.core.progress import (  # noqa: E402 — after sys.path + libstdc++ pin
     NullProgress,
     ProgressCallback,
     StreamProgress,

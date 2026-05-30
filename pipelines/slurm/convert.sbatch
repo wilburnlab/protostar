@@ -30,6 +30,12 @@ module load miniconda3/24.1.2-py310
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate constellation
 
+# Pin the env's libstdc++ ahead of the spack/system one on the loader path, else
+# sqlite3 -> libicui18n -> libstdc++ dies with a CXXABI_1.3.15 mismatch (the env's
+# lib has it; `module load miniconda3` puts the older system lib first). Spawn
+# workers inherit this, so the parallel converters resolve correctly too.
+export LD_LIBRARY_PATH="$CONDA_PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
 # --- knobs (override via --export) ---------------------------------------
 PROTOSTAR_DIR="${PROTOSTAR_DIR:-$HOME/protostar}"   # repo on OSC home (rsynced)
 DATASET="${DATASET:-all}"
