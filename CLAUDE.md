@@ -68,7 +68,7 @@ protostar/
 │   ├── 00_fetch_raw.py            # fresh download + hash verify; --seed-from optional
 │   ├── 10_convert_raw.py          # .raw -> parquet bundle (proc/), rebuilt from scratch
 │   ├── 15_reference_library.py    # ingest published .msp (+ optional re-search)
-│   ├── 20_build_metadata.py       # acquisition time table from .raw headers
+│   ├── 20_build_metadata.py       # acquisition time table from proc/ bundle metadata
 │   ├── 30_extract_intermediates.py
 │   └── experiments/               # one reproducible script per solidified experiment
 ├── results/                  # the "textbook": curated MD records + figures + small tables
@@ -218,28 +218,38 @@ censored scaling, binary-mixture mis-specification; do not resurrect it.
 
 ## Status
 
-Data layer implemented. `00_fetch_raw` (PRIDE v3 manifest + resumable download + verify +
-`--seed-from` relocation), `10_convert_raw` (drives `convert_batch` into `proc/`, centroid +
-profile, resume + SLURM sharding), and `15_reference_library` (Zenodo `.msp` fetch + extract)
-are written and committed; the per-dataset expected manifests live in `config/manifests/`. The
-SEARCH files are confirmed MaxQuant (`probe_search_format.py`) → ledger #11 targets a
-`massspec.io.maxquant` reader. Constellation's Thermo `.raw` reader is verified production-ready
-(ledger #1/#2 landed).
+**Data layer complete and executed on OSC (Cardinal).** The full corpus is fetched and
+converted on project ESS:
 
-**Convert path validated end-to-end on OSC (Cardinal).** Two upstream Constellation fixes were
-required and have **landed on `main`**: the Thermo `ToolSpec` was never registered (its adapter
-was missing from `thirdparty/__init__`'s eager-import list, so DLL discovery returned `None`
-despite a complete install) — fixed; and `scan_metadata` now persists **`analyzer`** (FTMS/ITMS)
-and **`activation_type`** (hcd/cid/etd) as columns, so per-scan mode assignment is a column
-filter, not a `filter_string` re-parse (HCD35 vs CID35 are indistinguishable by energy alone).
-Smoke + profile + ETD conversions all produce correct bundles; the profile pass expands MS1 only
-(MS2 is centroided at acquisition). Threading was calibrated on real files: the converter is
-**ESS-I/O-bound**, so **16 workers** is the sweet spot (~110 MB/s, 71% of 32-worker throughput at
-half the cores; 32 shows marginal gain + CLR-spawn instability). Budget ≈ 7–8 h centroid + ~15 h
-profile for the full ~2.9 TB at 16 workers — one 48 h allocation. See `docs/osc_runbook.md`.
+- **`00_fetch_raw`** — all **4,213 `.raw`** seeded from the Cartographer tree (`--seed-mode move`)
+  + all **SEARCH** (MaxQuant `txt` zips, 1460/888/1865) downloaded from PRIDE.
+- **`10_convert_raw`** — **4,212 / 4,213** bundles in **both** centroid + profile (16-worker
+  exclusive-node SLURM arrays). The single miss is a documented **corrupt PRIDE source**
+  (Wilhelm2021 `…pool_122…3xHCD-1hnoincl-R1.raw`, a 57,874-byte aborted acquisition, byte-identical
+  on re-download — see `docs/osc_runbook.md` "Known-skip"); no data lost (its R2 + other injections
+  converted). A dry-run therefore permanently shows "1 to convert" for Wilhelm2021 — expected.
+- **`15_reference_library`** — all 8 published `.msp` modes fetched + extracted to `libraries/`.
+- **`20_build_metadata`** — acquisition time-table built + validated for all three datasets
+  (`proc/<dataset>/acquisitions.parquet`; per-instrument 1-based chronological `acquisition_order`,
+  contiguous + datetime-monotonic, verified on the real corpus).
 
-Next (run on OSC): seed (relocate ~2.9 TB from the Cartographer tree; ETD **included** for
-posterity) → download any gaps → convert (centroid all three at `--cpus-per-task=16`, then the
-profile pass after the 1–2 file validation). Then `20_build_metadata` →
-`30_extract_intermediates`, driving the Counter modules into Constellation as the experiments
-need them.
+**Constellation contributions landed this phase** (`docs/constellation_contributions.md`): #1/#2
+Thermo reader + bundle (production-ready); the Thermo **`ToolSpec` registration** fix (adapter was
+missing from `thirdparty/__init__`'s eager-import list → DLL discovery returned `None`); **#11**
+the **`massspec.io.maxquant`** reader (`msms.txt` → `Search.psms` / new `PSM_TABLE`, ProForma
+modseqs, `(raw_file, scan)` join-back to `scan_metadata` cross-checked by analyzer/fragmentation);
+`scan_metadata` **`analyzer` + `activation_type`** columns (HCD35 vs CID35 are indistinguishable by
+energy alone, so per-scan mode is a column filter, not a `filter_string` re-parse); and the
+**`Acquisitions`** widening (`instrument_serial`/`instrument_model`/`acquisition_order` +
+`with_acquisition_order()`, which orders by a parsed UTC instant, not the raw datetime string).
+
+**Operational facts established** (in `docs/osc_runbook.md`): the libstdc++ `LD_LIBRARY_PATH` pin;
+convert is **ESS-I/O-bound** → **16 workers / exclusive node** (≥32 risks CLR-spawn flakiness);
+profile expands MS1 only (all MS2 centroided at acquisition). ETD is converted + kept (MS1 +
+EThcD/ETciD MS2) though outside the 9 modeled HCD/CID modes.
+
+**Next:** `30_extract_intermediates` (MS1/MS2 chromatograms for PROCAL + library peptides) — gated
+on **ledger #3** (chromatogram extraction) landing in Constellation, so it is a build-upstream-first
+effort, not self-contained like stage 20. The MaxQuant identifications (#11) now unblock the
+search↔raw association the experiments build on; the Counter modules (#4–#9) follow as those
+experiments need them.
