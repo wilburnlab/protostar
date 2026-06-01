@@ -43,6 +43,8 @@ config/osc.toml
 # --- Session / local state ---
 session_notes.md
 .osc_helper/
+# Claude Code session-local settings + scheduled-task lock
+.claude/
 
 # --- Editor / OS ---
 .vscode/

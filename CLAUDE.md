@@ -204,6 +204,15 @@ censored scaling, binary-mixture mis-specification; do not resurrect it.
 - **SLURM:** `set -eo pipefail` (NOT `-euo` — conda breaks on unbound vars);
   `module load miniconda3/24.1.2-py310` + `source "$(conda info --base)/etc/profile.d/conda.sh"`.
   Prefer extended single allocations over many small jobs. Watchers run on the compute node.
+- **libstdc++ pin (required):** after `conda activate constellation`, run
+  `export LD_LIBRARY_PATH="$CONDA_PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"` — else
+  `module load` shadows the env's libstdc++ and constellation import dies with a
+  `CXXABI_1.3.15` mismatch. The pipeline scripts self-heal via a one-time re-exec
+  (`pipelines/_common.py`), but ad-hoc `python -c` / `convert.sbatch` set it explicitly.
+- **Convert is ESS-I/O-bound:** use **`--workers 16`** (`--cpus-per-task=16`), not the whole
+  node — 16 captures ~71% of 32-worker throughput at half the cores, and ≥32 risks CLR-spawn
+  flakiness. The Thermo DLLs are loaded only inside spawn workers (never fork a CLR-initialised
+  parent). `.raw` is the source of truth; ETD is converted + kept (MS1 + EThcD/ETciD MS2).
 
 ---
 
@@ -217,6 +226,20 @@ SEARCH files are confirmed MaxQuant (`probe_search_format.py`) → ledger #11 ta
 `massspec.io.maxquant` reader. Constellation's Thermo `.raw` reader is verified production-ready
 (ledger #1/#2 landed).
 
-Next (run on OSC): seed → download → convert (centroid all three, then the profile pass after a
-1–2 file validation). Then `20_build_metadata` → `30_extract_intermediates`, driving the Counter
-modules into Constellation as the experiments need them.
+**Convert path validated end-to-end on OSC (Cardinal).** Two upstream Constellation fixes were
+required and have **landed on `main`**: the Thermo `ToolSpec` was never registered (its adapter
+was missing from `thirdparty/__init__`'s eager-import list, so DLL discovery returned `None`
+despite a complete install) — fixed; and `scan_metadata` now persists **`analyzer`** (FTMS/ITMS)
+and **`activation_type`** (hcd/cid/etd) as columns, so per-scan mode assignment is a column
+filter, not a `filter_string` re-parse (HCD35 vs CID35 are indistinguishable by energy alone).
+Smoke + profile + ETD conversions all produce correct bundles; the profile pass expands MS1 only
+(MS2 is centroided at acquisition). Threading was calibrated on real files: the converter is
+**ESS-I/O-bound**, so **16 workers** is the sweet spot (~110 MB/s, 71% of 32-worker throughput at
+half the cores; 32 shows marginal gain + CLR-spawn instability). Budget ≈ 7–8 h centroid + ~15 h
+profile for the full ~2.9 TB at 16 workers — one 48 h allocation. See `docs/osc_runbook.md`.
+
+Next (run on OSC): seed (relocate ~2.9 TB from the Cartographer tree; ETD **included** for
+posterity) → download any gaps → convert (centroid all three at `--cpus-per-task=16`, then the
+profile pass after the 1–2 file validation). Then `20_build_metadata` →
+`30_extract_intermediates`, driving the Counter modules into Constellation as the experiments
+need them.
