@@ -14,8 +14,12 @@ needs the ``peptides`` optional extra (``openpyxl``).
 from .reference import (
     PEPTIDE_REFERENCE_SCHEMA_VERSION,
     PEPTIDE_REFERENCE_TABLE,
+    POOL_PREFIX_DATASET,
+    load_pool_targets,
     load_reference,
+    pool_prefix,
     reference_path,
+    resolve_pool_dataset,
     write_reference,
 )
 from .sources import DATASET_SPECS, SUPPLEMENT_FILES, parse_supplement
@@ -24,9 +28,13 @@ __all__ = [
     "DATASET_SPECS",
     "PEPTIDE_REFERENCE_SCHEMA_VERSION",
     "PEPTIDE_REFERENCE_TABLE",
+    "POOL_PREFIX_DATASET",
     "SUPPLEMENT_FILES",
+    "load_pool_targets",
     "load_reference",
     "parse_supplement",
+    "pool_prefix",
     "reference_path",
+    "resolve_pool_dataset",
     "write_reference",
 ]

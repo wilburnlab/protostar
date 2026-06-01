@@ -85,6 +85,24 @@ def test_schema_has_version_and_core_fields():
     assert PEPTIDE_REFERENCE_TABLE.metadata[b"schema_version"] == b"1"
 
 
+def test_public_api_importable_from_package():
+    # The package top-level must re-export the documented entry points (a missing
+    # export passes submodule-level tests but breaks `from protostar.peptides import …`).
+    import protostar.peptides as P
+
+    for name in (
+        "load_reference",
+        "load_pool_targets",
+        "resolve_pool_dataset",
+        "pool_prefix",
+        "POOL_PREFIX_DATASET",
+        "parse_supplement",
+        "PEPTIDE_REFERENCE_TABLE",
+    ):
+        assert hasattr(P, name), f"protostar.peptides missing public export {name!r}"
+        assert name in P.__all__
+
+
 # ── parsing ────────────────────────────────────────────────────────────
 
 
