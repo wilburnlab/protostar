@@ -108,7 +108,9 @@ def read_acquisition_record(bundle_dir: Path, acquisition_id: int) -> dict[str, 
     }
 
 
-def build_acquisitions(data_root: "str | Path", dataset: str, *, mode: str = "centroid") -> Acquisitions:
+def build_acquisitions(
+    data_root: "str | Path", dataset: str, *, mode: str = "centroid"
+) -> Acquisitions:
     """Build the chronologically-ordered ``Acquisitions`` table for a dataset.
 
     ``acquisition_id`` = index in the stem-sorted bundle list (stable across

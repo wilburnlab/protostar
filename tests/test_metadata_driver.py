@@ -79,12 +79,15 @@ def test_read_acquisition_record_maps_fields(tmp_path):
 
 def test_build_acquisitions_stable_ids_and_per_instrument_order(tmp_path):
     # Two instruments; datetimes out of input/stem order to prove chronological ranking.
-    _write_bundle(tmp_path, "Zolg2017", "run_A2", creation_date="06/02/2016 10:00:00",
-                  instrument_serial="A")
-    _write_bundle(tmp_path, "Zolg2017", "run_A1", creation_date="06/01/2016 10:00:00",
-                  instrument_serial="A")
-    _write_bundle(tmp_path, "Zolg2017", "run_B1", creation_date="06/05/2016 10:00:00",
-                  instrument_serial="B")
+    _write_bundle(
+        tmp_path, "Zolg2017", "run_A2", creation_date="06/02/2016 10:00:00", instrument_serial="A"
+    )
+    _write_bundle(
+        tmp_path, "Zolg2017", "run_A1", creation_date="06/01/2016 10:00:00", instrument_serial="A"
+    )
+    _write_bundle(
+        tmp_path, "Zolg2017", "run_B1", creation_date="06/05/2016 10:00:00", instrument_serial="B"
+    )
     acq = driver.build_acquisitions(tmp_path, "Zolg2017")
     rows = {r["source_file"]: r for r in acq.table.to_pylist()}
     # acquisition_id is the stem-sorted index: run_A1=0, run_A2=1, run_B1=2
