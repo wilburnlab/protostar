@@ -93,7 +93,8 @@ analysis (which keyed off mzML files and FragPipe searches) — none of that car
 
 - **Datasets & accessions:** Zolg2017 = `PXD004732`, Gessulat2019 = `PXD010595`,
   Wilhelm2021 = `PXD021013`. **4,213 raw acquisitions, ~2.9 TB** (RAW: 1460 / 888 / 1865;
-  PRIDE-manifest counts — see `config/manifests/`). Each acquisition has one paired MaxQuant
+  PRIDE-manifest counts — see `config/manifests/`; these span **all four** injection types
+  **including ETD**). Each acquisition has one paired MaxQuant
   SEARCH zip (~110 GB more). NB: this corrects the earlier "~9,612 / ~7.8 TB" estimate, which
   appears to have included the out-of-scope *modified*-peptide pools. Wilhelm2021 publishes no
   checksums, so its files are size-verified only.
@@ -115,10 +116,21 @@ analysis (which keyed off mzML files and FragPipe searches) — none of that car
   `config/osc.toml` — the lab points it at project ESS storage) with `raw/{dataset}/`,
   `search/{dataset}/`, `proc/{dataset}/{centroid,profile}/<stem>/`, `libraries/<mode>/`. The
   `proc/` parquet bundles are **rebuilt from scratch** with the latest Constellation reader
-  (no reuse of prior caches) for downstream consistency.
+  (no reuse of prior caches) for downstream consistency. Only MS1 survey scans are recorded in
+  **profile** mode; **all MS2 (Orbitrap, ion-trap, ETD) are centroided at acquisition**
+  (Zolg et al. 2017), so the `profile` pass expands MS1 only — IT MS2 peak rows are
+  byte-identical between the centroid and profile bundles.
 - **Fragmentation mode is a per-scan property** derived from the scan filter string /
-  scanmeta — not from pre-split files. Each pool was acquired as 3 injections (`.raw` files);
-  the 9 modes (CID35/HCD20–35 × DDA/Targeted × IT/Orbi) interleave within them.
+  scanmeta — not from pre-split files. Each pool was acquired as **4 injections** (`.raw`
+  files): `DDA`, `2xIT_2xHCD`, `3xHCD`, `ETD` (Wilhelm2021 omits ETD for 60 pools). The 9
+  modeled modes (CID35/HCD20–35 × DDA/Targeted × IT/Orbi) are **HCD/CID only** and interleave
+  within the first three injections. **ETD is converted and kept for posterity:** its MS1 is
+  the same full-profile Orbitrap survey (informative for the MS1 ion model + PROCAL) and the
+  reader parses its EThcD/ETciD MS2 — but ETD MS2 falls outside the 9 modeled modes and has no
+  published `.msp` reference. HCD vs CID is **not** recoverable from collision energy alone
+  (CID35 and HCD35 share NCE 35); the activation type is an explicit filter-string token,
+  surfaced as the `activation_type` + `analyzer` columns in `scan_metadata` (Constellation
+  contribution — see `docs/constellation_contributions.md`).
 - **PROCAL:** 40 synthetic calibrant peptides spiked into every run — calibration anchors and
   high-N statistical targets.
 
