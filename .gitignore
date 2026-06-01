@@ -5,6 +5,8 @@
 *.mzpeak
 *.scanmeta
 *.parquet
+# Exception: the small curated synthetic-peptide reference ships with the repo.
+!protostar/peptides/data/*.parquet
 
 # Data dir holds only small local dev subsets; keep the dir, ignore its contents.
 data/*

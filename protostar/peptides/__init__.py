@@ -1,0 +1,32 @@
+"""Synthetic-peptide reference — sequence ↔ pool ↔ set ground truth.
+
+Curates the ProteomeTools manuscript supplements (a one-time manual Excel input)
+into a compact, version-controlled parquet per dataset (shipped under
+``protostar/peptides/data/``). The pool names match the acquisition ``.raw``
+stems, so this is the known-answer join from peptide → pool → run used by XIC
+extraction / validation and downstream identification.
+
+``load_reference(dataset)`` reads the committed parquet (pyarrow only);
+``parse_supplement`` (in ``sources``) rebuilds it from the Excel workbooks and
+needs the ``peptides`` optional extra (``openpyxl``).
+"""
+
+from .reference import (
+    PEPTIDE_REFERENCE_SCHEMA_VERSION,
+    PEPTIDE_REFERENCE_TABLE,
+    load_reference,
+    reference_path,
+    write_reference,
+)
+from .sources import DATASET_SPECS, SUPPLEMENT_FILES, parse_supplement
+
+__all__ = [
+    "DATASET_SPECS",
+    "PEPTIDE_REFERENCE_SCHEMA_VERSION",
+    "PEPTIDE_REFERENCE_TABLE",
+    "SUPPLEMENT_FILES",
+    "load_reference",
+    "parse_supplement",
+    "reference_path",
+    "write_reference",
+]
