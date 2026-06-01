@@ -22,7 +22,7 @@ record.
 | 8 | Seeded/global-agnostic scoring function + identification Λ (Counter v2 §10) | `massspec` | `05_counter_validation` | needed | `Λ_q = L_P(Q) − L_P(Q\{q})`. |
 | 9 | Laplace credible intervals on N_total | `massspec` | uncertainty experiments | needed | 6×6 Hessian at MAP; well-conditioned now that α is stable. |
 | 10 | EncyclopeDIA / Scribe search wrapper (reads `.raw` natively) | `thirdparty` + `massspec.io` | `15_reference_library` (optional re-search) | needed | EncyclopeDIA adapter (`massspec.io.encyclopedia`) + `thirdparty` registry exist; a search-invocation wrapper may need adding. Optional re-search **cross-check to #11**; not on the critical path. |
-| 11 | MaxQuant search-output reader (`txt/` export: `msms`/`evidence`/`peptides`/`parameters`/…) | `massspec.io.maxquant` | exp 01–02 (PROCAL & extend identification); search↔raw association | needed | **Foundational / Lane A** — reprioritized. Confirmed by `pipelines/probe_search_format.py`: all three datasets' PRIDE SEARCH zips are MaxQuant combined-`txt` exports, already paired with every raw file. Reading `msms.txt`/`evidence.txt` gives per-scan peptide assignments with no re-search compute — the identification path that anchors every experiment. |
+| 11 | MaxQuant search-output reader (`txt/` export: `msms`/`evidence`/`peptides`/`parameters`/…) | `massspec.io.maxquant` | exp 01–02 (PROCAL & extend identification); search↔raw association | **landed** | `read_maxquant_search` / `load_search(..., format="maxquant")` → `Search.psms` (new `PSM_TABLE`); ProForma modseqs (fixed mods from `parameters.txt`); handles root + `txt/`-nested layouts; header-only `msms.txt` = 0 PSMs. `search.crosscheck.cross_validate_against_scan_metadata` joins on `(raw_file, scan)` and checks analyzer/fragmentation (ET-supplemental treated as consistent). Reader-only (no re-run); v2 defers `evidence`/`peptides`/fragment annotations. |
 | 12 | MS2 spectral-similarity suite: cosine similarity, normalized dot product, spectral-entropy similarity (Li 2021), + a unified `compare_spectra` over aligned vectors | `core.stats.losses` (extend) / new `massspec.spectra.similarity` | exp 01 (`01_ms2_spectral_scoring`) | needed | **Lane A, net-new but small.** Reuse `kld`, `spectral_angle`, `l1/l2_normalize` already in `core/stats/losses.py`; only raw cosine / dot / entropy-*similarity* + the comparator are missing (no `massspec.spectra` package exists yet). |
 | 13 | Consensus / aggregated-spectrum builder (align replicate spectra to a reference fragment ladder; aggregate intensities mean/median + per-fragment dispersion) | new `massspec.spectra.consensus` | exp 01–02 | needed | **Lane A, net-new.** Reuse `match_mz`/`assign_fragments` (`massspec.peptide.match`); reference impl `cartographer/data/spectra.py`. |
 | 14 | Multinomial fragment-intensity **generative** model (peptide → expected fragment propensities → `Multinomial` over channels) | `massspec` | exp 01 (extend) | needed | **Deferred (later phase).** Near-term exp 02 only *characterizes* multinomial shot noise using the existing `Multinomial` (`core/stats/distributions.py`); this predictive model is not built yet. |
@@ -33,9 +33,10 @@ record.
 The MS2-first manuscript ([`manuscript_roadmap.md`](manuscript_roadmap.md)) reprioritizes these
 items into three lanes by what they unblock:
 
-- **Lane A — foundational, unblocks Part I (MS2).** #11 (MaxQuant reader — identification),
-  #12 (spectral-similarity suite), #13 (consensus builder), and the **MS2-retrieval slice of
-  #3**. Mostly net-new and small; the minimal path to the first runnable experiment.
+- **Lane A — foundational, unblocks Part I (MS2).** #11 (MaxQuant reader — identification) is
+  **landed**; remaining: #12 (spectral-similarity suite), #13 (consensus builder), and the
+  **MS2-retrieval slice of #3**. Mostly net-new and small; the minimal path to the first runnable
+  experiment.
 - **Lane B — unblocks Part II (MS1 error structure).** #3 (MS1 extraction + windowed scoring),
   the `error_model` α(z)/Student-t likelihoods, #5 (GlobalCalibration).
 - **Lane C — unblocks Part III (Counter).** #4 (HyperEMG peak shapes), #6 (`Mass`), #7
