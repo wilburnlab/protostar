@@ -43,6 +43,9 @@ config/osc.toml
 # --- Session / local state ---
 session_notes.md
 .osc_helper/
+# Real example data (MaxQuant exports, etc.) pulled locally for development/planning;
+# never committed — committed tests use small synthetic fixtures under tests/data/.
+local_examples/
 # Claude Code session-local settings + scheduled-task lock
 .claude/
 
