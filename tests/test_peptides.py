@@ -153,3 +153,48 @@ def test_load_missing_raises(tmp_path, monkeypatch):
     monkeypatch.setattr(reference, "_DATA_DIR", tmp_path / "empty")
     with pytest.raises(FileNotFoundError, match="no peptide reference"):
         reference.load_reference("Zolg2017")
+
+
+# ── cross-dataset pool resolution ──────────────────────────────────────
+
+
+def test_pool_prefix():
+    assert reference.pool_prefix("TUM_first_pool_107") == "TUM_first_pool"
+    assert reference.pool_prefix("Thermo_SRM_Pool_1") == "Thermo_SRM_Pool"
+    assert reference.pool_prefix("TUM_HLA2_1") == "TUM_HLA2"
+
+
+def test_resolve_pool_dataset():
+    # Wilhelm2021 no-inclusion pools are Zolg2017 re-acquisitions.
+    assert reference.resolve_pool_dataset("TUM_first_pool_107") == "Zolg2017"
+    assert reference.resolve_pool_dataset("TUM_second_pool_122") == "Zolg2017"
+    assert reference.resolve_pool_dataset("TUM_HLA_1") == "Wilhelm2021"
+    assert reference.resolve_pool_dataset("TUM_isoform_5") == "Gessulat2019"
+
+
+def test_resolve_pool_dataset_unknown_prefix_raises():
+    with pytest.raises(KeyError, match="unknown pool prefix"):
+        reference.resolve_pool_dataset("MYSTERY_pool_1")
+
+
+# The following use the committed real references (the cross-dataset linkage
+# can't be expressed by synthetic fixtures). Skip cleanly if not built.
+def _have_refs(*datasets):
+    return all(reference.reference_path(d).is_file() for d in datasets)
+
+
+@pytest.mark.skipif(
+    not _have_refs("Zolg2017", "Wilhelm2021"),
+    reason="committed peptide references not present",
+)
+def test_load_pool_targets_sources_noincl_from_zolg():
+    # A Wilhelm native pool + two no-inclusion pools that live in Zolg2017.
+    t = reference.load_pool_targets(["TUM_HLA_1", "TUM_first_pool_107", "TUM_second_pool_122"])
+    assert "source_dataset" in t.column_names
+    srcs = set(t.column("source_dataset").to_pylist())
+    assert srcs == {"Wilhelm2021", "Zolg2017"}
+    pools = set(t.column("pool").to_pylist())
+    assert {"TUM_HLA_1", "TUM_first_pool_107", "TUM_second_pool_122"} <= pools
+    # the borrowed pools are non-empty (the gap this fixes)
+    zolg_rows = t.filter(pc.equal(t.column("source_dataset"), "Zolg2017"))
+    assert zolg_rows.num_rows > 0

@@ -30,7 +30,6 @@ Provenance / decisions:
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -96,8 +95,6 @@ DATASET_SPECS: dict[str, DatasetSpec] = {
     ),
 }
 
-_POOL_SUFFIX_RE = re.compile(r"_\d+$")
-
 
 def _norm_header(header: tuple) -> dict[str, int]:
     """Normalized (lowercased, de-quoted, trimmed) header → column index."""
@@ -112,7 +109,9 @@ def _norm_header(header: tuple) -> dict[str, int]:
 
 
 def _pool_prefix(pool: str | None) -> str | None:
-    return _POOL_SUFFIX_RE.sub("", pool) if pool else None
+    from .reference import pool_prefix
+
+    return pool_prefix(pool) if pool else None
 
 
 def _load_rt_map(wb, spec: DatasetSpec) -> dict[str, tuple[float | None, float | None]]:
