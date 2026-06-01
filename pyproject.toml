@@ -22,11 +22,19 @@ dependencies = [
 # OSC (Ohio Supercomputer Center) job/sync helpers — lab-internal, installed
 # editable from ~/projects/osc_helper. Not required for the reproducible path.
 osc = ["osc_helper"]
-dev = ["pytest", "ruff"]
+# Build-time only: parsing the manuscript Excel supplements into the committed
+# peptide-reference parquet (pipelines/05_peptide_reference.py). Reading the
+# committed parquet at runtime needs nothing beyond the core deps.
+peptides = ["openpyxl"]
+dev = ["pytest", "ruff", "openpyxl"]
 
 [tool.setuptools.packages.find]
 include = ["protostar*"]
 exclude = ["pipelines*", "config*", "docs*", "results*", "notebooks*", "data*"]
+
+[tool.setuptools.package-data]
+# Ship the committed synthetic-peptide reference parquet inside the package.
+"protostar.peptides" = ["data/*.parquet"]
 
 [tool.ruff]
 line-length = 100
