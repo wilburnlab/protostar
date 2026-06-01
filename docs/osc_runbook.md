@@ -86,7 +86,24 @@ python pipelines/00_fetch_raw.py  --dataset all --dry-run             # fetch co
 python pipelines/10_convert_raw.py --dataset all --dry-run           # centroid converted vs planned
 python pipelines/10_convert_raw.py --dataset all --dry-run --profile # profile
 ```
-Expect raw counts ~ 1460 / 888 / 1865 (Zolg / Gessulat / Wilhelm); converted == present per mode.
+Expect raw counts ~ 1460 / 888 / 1865 (Zolg / Gessulat / Wilhelm); converted == present per mode,
+**except one known-bad source file** (see below): Wilhelm2021 converts 1864 / 1865, so its dry-run
+permanently shows "1 to convert". That is expected, not a failure.
+
+## Known-skip: one corrupt PRIDE source file (Wilhelm2021)
+
+`03174_GF7-TUM_second_pool_122_01_01-3xHCD-1hnoincl-R1.raw` is a **57,874-byte aborted
+acquisition** — a valid Thermo OLE2 container (correct `Finnigan` magic) with no MS instrument
+device, so `convert` raises `ArgumentOutOfRangeException: Instrument index not available …`
+(`RawFileReader.SelectInstrument`) and the bundle is never written. **No data is lost:** the same
+pool's R2 re-acquisition and its other three injections all convert fine.
+
+Verified faithful to the source (2026-05-31): a fresh re-download is byte-identical to our copy
+(`sha256 083d9238…`), and PRIDE's live `Content-Length` is 57,874 — so this is a corrupt file at
+the **source archive**, not a truncated download. Wilhelm2021 publishes no checksums, so the fetch
+size-check (57,874 == expected) passes and the stub is retained. Do not chase the perpetual
+"1 to convert"; re-fetching reproduces the identical stub. (Constellation hardening to skip such
+empty `.raw` gracefully instead of raising is tracked in `constellation_contributions.md`.)
 
 ## Notes
 - Idempotent throughout — re-running after an interruption is the recovery path.
