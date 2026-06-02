@@ -1,29 +1,35 @@
 #!/usr/bin/env python
-"""exp02 — MS2 fragmentation is multinomial (the mean–variance law).
+"""exp02 — Is MS2 fragmentation noise multinomial or Gaussian? (shot-noise scaling)
 
-For high-replicate calibrant peptides (PROCAL / QC, spiked into every run), this
-driver characterizes fragment intensities as ``Multinomial(N, p)`` draws and
-checks the shot-noise law: across replicate spectra of one peptide, the
-per-channel variance of the observed proportions ``p̂_k`` should track
-``p̄_k(1 − p̄_k) / N`` with a single fitted slope ``1/N_eff`` per peptide. That
-slope, vs total intensity, is the bridge to the MS1 ion count N (Part II).
+A generative-model comparison via a **nearest-neighbour-in-intensity** test on
+calibrant peptides, which sidesteps absolute N (and the gain α) entirely.
 
-Pipeline (all statistics imported from Constellation; this script only
-orchestrates):
+For one (peptide, charge, mode), pool every MS2 spectrum across runs, normalize
+each to a fragment-proportion vector p̂ with a total intensity I (∝ the ion count
+N, up to the unknown gain α). Sort by I and compare **adjacent** spectra — they
+are quasi-N-matched (tiny ΔI when thousands of spectra span the range), so their
+difference isolates *sampling noise at that intensity*. The squared proportion
+difference scales as
 
-  searches (one per raw file) → gate PSMs → tag calibrants → keep QC/PROCAL →
-  XIC level-2 assigned-scan MS2 (analyzer-split tolerance) → per-replicate
-  fragment vectors on each peptide's fixed basis → median consensus +
-  per_replicate[R,K] → variance law + multinomial-deviance χ² check.
+    E[‖Δp̂‖²]  ≈  A · I^(−β)  +  B ,   β = 1  (multinomial / Poisson shot noise)
+                                        β = 2  (additive Gaussian — interference / readout)
 
-Outputs (under ``<out>``): ``exp02_channels.parquet`` (per-channel pbar / var /
-p(1−p)), ``exp02_groups.parquet`` (per-peptide N_eff / R² / deviance), and
-figures 2.2 (mean–variance law) + 2.3 (N_eff vs intensity) under
-``results/figures/``.
+with B a constant floor (real run-to-run drift / residual interference). The
+exponent β is **dimensionless** — it needs only relative N (intensity ratios),
+never α — so this is the α-free version of the shot-noise test. On clean,
+interference-free calibrants we expect β ≈ 1 with small B: the multinomial
+signature, and the reason KL (the multinomial MLE) is the right comparator while
+cosine/L2 (the Gaussian MLE) over-weights intense-ion shot noise. Cf. Du et al.
+2008 (Var = N·p + N·p(1−p); ion-trap Poisson-limited).
 
-Runs on a compute node (loads each bundle's peaks table). Example:
+All statistics here are **descriptive** (binned medians + a log-log slope, with
+β=1/β=2 as reference lines) — no generative/likelihood fit lives in protostar.
+The driver saves a per-spectrum parquet (intensity + aligned proportions) and a
+nearest-neighbour-pairs parquet for offline re-analysis, plus first-look figures.
+
+Runs on a compute node. Example:
     python pipelines/experiments/02_ms2_multinomial.py --dataset Zolg2017 \
-        --injection DDA --max-acquisitions 30 --peptides qc
+        --injection DDA --max-acquisitions 250 --peptides qc
 """
 
 from __future__ import annotations
@@ -39,71 +45,101 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from _common import add_common_args, data_root, load_config
 
+import numpy as np
 import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 import torch
 
+from constellation.massspec.spectra.consensus import align_to_basis
 from protostar.experiments import consensus_assembly, ms2_extract, scans
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+_EPS = 1e-12
 
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
     add_common_args(p)
-    p.add_argument("--dataset", default="Zolg2017", help="dataset (default Zolg2017)")
-    p.add_argument(
-        "--injection",
-        default="DDA",
-        help="injection-type token to select search zips (default DDA)",
-    )
-    p.add_argument(
-        "--peptides",
-        choices=("qc", "procal", "all"),
-        default="qc",
-        help="peptide scope: qc (labelled calibrants, default), procal (40), or all",
-    )
-    p.add_argument("--max-acquisitions", type=int, default=30)
-    p.add_argument(
-        "--min-replicates",
-        type=int,
-        default=8,
-        help="min distinct acquisitions a (peptide,charge,mode) must recur in",
-    )
-    p.add_argument("--min-channels", type=int, default=4, help="min nonzero channels to fit")
-    p.add_argument("--out", type=Path, default=None, help="output dir (default <data_root>/exp/02)")
+    p.add_argument("--dataset", default="Zolg2017")
+    p.add_argument("--injection", default="DDA", help="injection token selecting search zips")
+    p.add_argument("--peptides", choices=("qc", "procal", "all"), default="qc")
+    p.add_argument("--max-acquisitions", type=int, default=250)
+    p.add_argument("--min-spectra", type=int, default=40, help="min spectra per group to analyze")
+    p.add_argument("--rel-di-max", type=float, default=0.15, help="max ΔI/I for an N-matched pair")
+    p.add_argument("--n-bins", type=int, default=18, help="log-intensity bins for the median curve")
+    p.add_argument("--out", type=Path, default=None)
     return p
 
 
-def _select_searches(droot: Path, dataset: str, injection: str, limit: int) -> list[Path]:
-    sdir = droot / "search" / dataset
-    zips = sorted(p for p in sdir.glob(f"*{injection}*.zip"))
+def _select_searches(droot, dataset, injection, limit):
+    zips = sorted((droot / "search" / dataset).glob(f"*{injection}*.zip"))
     return zips[:limit]
 
 
-def _bundle_peaks(droot: Path, dataset: str, raw_file: str):
+def _bundle_peaks(droot, dataset, raw_file):
     bundle = droot / "proc" / dataset / "centroid" / raw_file / "peaks.parquet"
     return pq.read_table(bundle) if bundle.is_file() else None
 
 
-def _peptide_filter(psms, scope: str):
+def _peptide_filter(psms, scope):
     if scope == "all":
         return psms
     col = "is_procal" if scope == "procal" else "is_qc"
     return psms.filter(pc.fill_null(psms.column(col), False))
 
 
-def _fit_through_origin(x: torch.Tensor, y: torch.Tensor) -> tuple[float, float]:
-    """LS slope of y = m·x through the origin, plus R²."""
-    denom = (x * x).sum()
-    if denom <= 0:
-        return float("nan"), float("nan")
-    m = (x * y).sum() / denom
-    ss_res = ((y - m * x) ** 2).sum()
-    ss_tot = ((y - y.mean()) ** 2).sum()
-    r2 = float(1.0 - ss_res / ss_tot) if ss_tot > 0 else float("nan")
-    return float(m), r2
+def _aligned_matrix(modseq, spectra):
+    """Stack replicate (mz_theoretical, intensity) spectra onto the peptide's
+    fixed fragment basis → (R, K) tensor, plus the basis."""
+    basis = consensus_assembly.basis_for(modseq)
+    rows = [
+        align_to_basis(mz, inten, basis, tolerance=20.0, tolerance_unit="ppm")
+        for mz, inten in spectra
+    ]
+    return torch.stack(rows), basis
+
+
+def _nn_pairs(props: torch.Tensor, totals: torch.Tensor, *, rel_di_max: float):
+    """Adjacent-in-intensity pairs (quasi-N-matched): returns (pair_intensity,
+    squared proportion distance ‖Δp̂‖²) for pairs with ΔI/I ≤ rel_di_max."""
+    order = torch.argsort(totals)
+    p, t = props[order], totals[order]
+    dp2 = ((p[1:] - p[:-1]) ** 2).sum(dim=1)
+    pair_i = 0.5 * (t[1:] + t[:-1])
+    di = (t[1:] - t[:-1]).abs()
+    keep = di <= rel_di_max * pair_i.clamp(min=_EPS)
+    return pair_i[keep], dp2[keep]
+
+
+def _binned_slope(pair_i: torch.Tensor, dp2: torch.Tensor, *, n_bins: int):
+    """Median ‖Δp̂‖² per log-intensity bin, the log-log slope over all bins, and
+    the slope over the lower-intensity (shot-noise-dominated) half — plus a floor
+    estimate B (median of the top bin). Descriptive only."""
+    if pair_i.numel() < 8:
+        return None
+    li = pair_i.log10()
+    edges = torch.linspace(li.min(), li.max(), n_bins + 1)
+    xs, ys = [], []
+    for b in range(n_bins):
+        hi_inc = b == n_bins - 1
+        m = (li >= edges[b]) & ((li <= edges[b + 1]) if hi_inc else (li < edges[b + 1]))
+        if int(m.sum()) >= 3:
+            xs.append(float(pair_i[m].median()))
+            ys.append(float(dp2[m].median()))
+    if len(xs) < 5:
+        return None
+    lx, ly = np.log10(np.array(xs)), np.log10(np.array(ys))
+    slope_all = float(np.polyfit(lx, ly, 1)[0])
+    half = max(3, len(xs) // 2)
+    slope_low = float(np.polyfit(lx[:half], ly[:half], 1)[0])  # shot-noise regime
+    floor = float(np.median(np.array(ys)[-2:]))  # high-I plateau ~ drift/interference
+    return {
+        "slope_all": slope_all,
+        "slope_low": slope_low,
+        "floor": floor,
+        "bins": list(zip(xs, ys)),
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -112,149 +148,113 @@ def main(argv: list[str] | None = None) -> int:
     droot = data_root(config, args.data_root)
     out = args.out or (droot / "exp" / "02")
     out.mkdir(parents=True, exist_ok=True)
-    extract_root = out / "_search_extract"
 
     searches = _select_searches(droot, args.dataset, args.injection, args.max_acquisitions)
     print(f"{len(searches)} {args.injection} acquisitions for {args.dataset}", flush=True)
 
-    # accumulate per (modseq, charge, mode): replicate spectra + the raw files seen.
     spectra_by_group: dict[tuple, list] = defaultdict(list)
-    files_by_group: dict[tuple, set] = defaultdict(set)
-    n_parse_fail = 0
-
     for i, zpath in enumerate(searches):
-        psms = scans.load_psms(zpath, extract_dir=extract_root / zpath.stem)
-        psms = scans.gate_psms(psms)
-        psms = scans.tag_calibrants(psms, dataset=args.dataset)
+        psms = scans.load_psms(zpath, extract_dir=out / "_extract" / zpath.stem)
+        psms = scans.tag_calibrants(scans.gate_psms(psms), dataset=args.dataset)
         psms = _peptide_filter(psms, args.peptides)
         psms = psms.filter(pc.is_valid(psms.column("modified_sequence")))
         if psms.num_rows == 0:
             continue
-        raw_files = set(psms.column("raw_file").to_pylist())
-        for raw_file in raw_files:
+        for raw_file in set(psms.column("raw_file").to_pylist()):
             sub = psms.filter(pc.equal(psms.column("raw_file"), raw_file))
             peaks = _bundle_peaks(droot, args.dataset, raw_file)
             if peaks is None:
-                print(f"  [skip] no bundle for {raw_file}", flush=True)
                 continue
             trace = ms2_extract.extract_ms2_fragments(peaks, sub)
             scan_spectra = ms2_extract.trace_to_scan_spectra(trace)
-            modseq = sub.column("modified_sequence").to_pylist()
-            charge = sub.column("charge").to_pylist()
-            mode = sub.column("mode").to_pylist()
-            scan = sub.column("scan").to_pylist()
-            for ms, ch, md, sc in zip(modseq, charge, mode, scan):
+            for ms, ch, md, sc in zip(
+                sub.column("modified_sequence").to_pylist(),
+                sub.column("charge").to_pylist(),
+                sub.column("mode").to_pylist(),
+                sub.column("scan").to_pylist(),
+            ):
                 spec = scan_spectra.get(sc)
-                if spec is None or spec[0].numel() == 0:
-                    continue
-                key = (ms, int(ch), md)
-                spectra_by_group[key].append(spec)
-                files_by_group[key].add(raw_file)
-        print(
-            f"[{i + 1}/{len(searches)}] {zpath.stem}: {len(spectra_by_group)} groups so far",
-            flush=True,
-        )
+                if spec is not None and spec[0].numel() > 0:
+                    spectra_by_group[(ms, int(ch), md)].append(spec)
+        if (i + 1) % 25 == 0 or i + 1 == len(searches):
+            print(f"[{i + 1}/{len(searches)}] {len(spectra_by_group)} groups", flush=True)
 
-    # per-group variance law
-    chan_rows: list[dict] = []
-    group_rows: list[dict] = []
-    for key, spectra in spectra_by_group.items():
-        modseq, charge, mode = key
-        if len(files_by_group[key]) < args.min_replicates:
+    # per-group: align → proportions → nearest-neighbour scaling
+    spec_rows, pair_rows, scal_rows = [], [], []
+    for (modseq, charge, mode), spectra in spectra_by_group.items():
+        if len(spectra) < args.min_spectra:
             continue
         try:
-            cons = consensus_assembly.assemble_consensus(modseq, spectra, aggregate="median")
-        except Exception as exc:  # noqa: BLE001 — skip unparseable / odd peptidoforms
-            n_parse_fail += 1
+            mat, _ = _aligned_matrix(modseq, spectra)
+        except Exception as exc:  # noqa: BLE001 — skip odd peptidoforms
             print(f"  [skip] {modseq}/{charge} {mode}: {exc}", flush=True)
             continue
-        per_rep = cons.per_replicate  # (R, K)
-        totals = per_rep.sum(dim=1, keepdim=True).clamp(min=1e-12)
-        props = per_rep / totals  # (R, K)
-        pbar = props.mean(dim=0)
-        var_k = props.var(dim=0, unbiased=True)
-        pq1mp = pbar * (1.0 - pbar)
-        nonzero = pbar > 0
-        if int(nonzero.sum()) < args.min_channels:
+        totals = mat.sum(dim=1)
+        ok = totals > 0
+        mat, totals = mat[ok], totals[ok]
+        if totals.numel() < args.min_spectra:
             continue
-        slope, r2 = _fit_through_origin(pq1mp[nonzero], var_k[nonzero])
-        n_eff = 1.0 / slope if slope and slope == slope and slope > 0 else float("nan")
-        dof = max(int(nonzero.sum()) - 1, 1)
-        good_neff = n_eff == n_eff and n_eff > 0
-        # cons.deviance_from_bulk[r] = 2·(intensity sum_r)·KL(p̂_r ‖ p̄), i.e. in
-        # *intensity* units. The calibration-free χ² uses the fitted effective ion
-        # count N_eff: 2·N_eff·KL_r = deviance[r]·N_eff / intensity_sum_r. Its mean
-        # over replicates ÷ dof ≈ 1 iff the variance-law N_eff also explains the
-        # per-replicate deviations (a multinomial self-consistency check).
-        dev = cons.deviance_from_bulk
-        mean_total = float(totals.mean())
-        if good_neff:
-            g2_neff = float((dev * n_eff / totals.squeeze(1)).mean())
-            intensity_per_ion = mean_total / n_eff  # ≈ gain α — the Part II bridge
-        else:
-            g2_neff = float("nan")
-            intensity_per_ion = float("nan")
-        b = cons.basis
-        for k in range(b.K):
-            if not bool(nonzero[k]):
-                continue
-            chan_rows.append(
+        props = mat / totals[:, None]
+        for j in range(totals.numel()):
+            spec_rows.append(
                 {
                     "modified_sequence": modseq,
                     "charge": charge,
                     "mode": mode,
-                    "ion_type": int(b.ion_type[k]),
-                    "position": int(b.position[k]),
-                    "fragment_charge": int(b.charge[k]),
-                    "pbar": float(pbar[k]),
-                    "var": float(var_k[k]),
-                    "p_one_minus_p": float(pq1mp[k]),
-                    "n_replicates": cons.n_replicates,
+                    "total_intensity": float(totals[j]),
+                    "props": props[j].tolist(),
                 }
             )
-        group_rows.append(
-            {
-                "modified_sequence": modseq,
-                "charge": charge,
-                "mode": mode,
-                "K": int(nonzero.sum()),
-                "n_replicates": cons.n_replicates,
-                "n_eff": n_eff,
-                "fit_r2": r2,
-                "mean_total_intensity": mean_total,
-                "g2_neff_over_dof": g2_neff / dof,
-                "intensity_per_ion": intensity_per_ion,
-            }
-        )
+        pair_i, dp2 = _nn_pairs(props, totals, rel_di_max=args.rel_di_max)
+        for j in range(pair_i.numel()):
+            pair_rows.append(
+                {
+                    "modified_sequence": modseq,
+                    "charge": charge,
+                    "mode": mode,
+                    "pair_intensity": float(pair_i[j]),
+                    "dp2": float(dp2[j]),
+                }
+            )
+        sc = _binned_slope(pair_i, dp2, n_bins=args.n_bins)
+        if sc is not None:
+            scal_rows.append(
+                {
+                    "modified_sequence": modseq,
+                    "charge": charge,
+                    "mode": mode,
+                    "n_spectra": int(totals.numel()),
+                    "n_pairs": int(pair_i.numel()),
+                    "slope_all": sc["slope_all"],
+                    "slope_low": sc["slope_low"],
+                    "floor": sc["floor"],
+                }
+            )
 
-    chan_tbl = pa.Table.from_pylist(chan_rows)
-    group_tbl = pa.Table.from_pylist(group_rows)
-    pq.write_table(chan_tbl, out / "exp02_channels.parquet")
-    pq.write_table(group_tbl, out / "exp02_groups.parquet")
+    pq.write_table(pa.Table.from_pylist(spec_rows), out / "exp02_spectra.parquet")
+    pq.write_table(pa.Table.from_pylist(pair_rows), out / "exp02_pairs.parquet")
+    scal_tbl = pa.Table.from_pylist(scal_rows)
+    pq.write_table(scal_tbl, out / "exp02_scaling.parquet")
     print(
-        f"\n{group_tbl.num_rows} qualifying peptide-groups "
-        f"({chan_tbl.num_rows} channel rows); {n_parse_fail} skipped.",
+        f"\n{scal_tbl.num_rows} peptide-groups; {len(spec_rows)} spectra; {len(pair_rows)} NN pairs",
         flush=True,
     )
-    if group_tbl.num_rows:
-
-        def _med(col: str) -> float:
-            return float(pc.approximate_median(group_tbl.column(col)).as_py() or float("nan"))
-
-        print(
-            f"median fit R² = {_med('fit_r2'):.3f}  |  "
-            f"median G²/dof (N_eff units) = {_med('g2_neff_over_dof'):.2f} (≈1 if multinomial)  |  "
-            f"median N_eff = {_med('n_eff'):.0f}  |  "
-            f"median intensity/ion ≈ {_med('intensity_per_ion'):.0f} (gain α preview)"
-        )
-
-    _make_figures(chan_tbl, group_tbl, REPO_ROOT / "results" / "figures")
+    if scal_tbl.num_rows:
+        for m in sorted(set(scal_tbl.column("mode").to_pylist())):
+            sm = scal_tbl.filter(pc.equal(scal_tbl.column("mode"), m))
+            lo = pc.approximate_median(sm.column("slope_low")).as_py()
+            al = pc.approximate_median(sm.column("slope_all")).as_py()
+            print(
+                f"  {m}: {sm.num_rows} peptides, median shot-noise slope = {lo:+.2f} "
+                f"(−1 multinomial / −2 Gaussian); slope(all bins) = {al:+.2f}"
+            )
+    _figures(scal_tbl, pair_rows, REPO_ROOT / "results" / "figures")
     return 0
 
 
-def _make_figures(chan_tbl, group_tbl, figdir: Path) -> None:
-    if group_tbl.num_rows == 0:
-        print("no qualifying groups — skipping figures", flush=True)
+def _figures(scal_tbl, pair_rows, figdir: Path) -> None:
+    if scal_tbl.num_rows == 0:
+        print("no groups — skipping figures", flush=True)
         return
     figdir.mkdir(parents=True, exist_ok=True)
     import matplotlib
@@ -262,58 +262,86 @@ def _make_figures(chan_tbl, group_tbl, figdir: Path) -> None:
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    # Fig 2.2 — mean–variance law, faceted by mode; a few top-replicate peptides.
-    modes = sorted(set(chan_tbl.column("mode").to_pylist()))
-    fig, axes = plt.subplots(
-        1, max(len(modes), 1), figsize=(6 * max(len(modes), 1), 5), squeeze=False
-    )
-    ch = chan_tbl.to_pylist()
-    grp = {(_g["modified_sequence"], _g["charge"], _g["mode"]): _g for _g in group_tbl.to_pylist()}
-    for ax, mode in zip(axes[0], modes):
-        rows = [r for r in ch if r["mode"] == mode]
-        # rank peptides in this mode by replicate count; show the top few
-        pep_n = defaultdict(int)
-        for r in rows:
-            pep_n[(r["modified_sequence"], r["charge"])] = r["n_replicates"]
-        top = sorted(pep_n, key=pep_n.get, reverse=True)[:6]
-        for pep in top:
-            pr = [r for r in rows if (r["modified_sequence"], r["charge"]) == pep]
-            x = [r["p_one_minus_p"] for r in pr]
-            y = [r["var"] for r in pr]
-            ax.scatter(x, y, s=14, alpha=0.6, label=f"{pep[0][:10]}+{pep[1]} (R={pep_n[pep]})")
-            g = grp.get((pep[0], pep[1], mode))
-            if g and g["n_eff"] == g["n_eff"] and g["n_eff"] > 0:
-                xs = sorted(x)
-                ax.plot(xs, [xi / g["n_eff"] for xi in xs], lw=1, alpha=0.8)
-        ax.set_title(f"{mode}: Var[p̂_k] vs p̄_k(1−p̄_k)")
-        ax.set_xlabel("p̄_k (1 − p̄_k)")
-        ax.set_ylabel("Var across replicates")
-        ax.legend(fontsize=6)
-    fig.tight_layout()
-    fig.savefig(figdir / "exp02_fig2_2_mean_variance_law.png", dpi=140)
-    print(f"wrote {figdir / 'exp02_fig2_2_mean_variance_law.png'}", flush=True)
-
-    # Fig 2.3 — fitted N_eff vs mean total intensity (the bridge).
-    g = group_tbl.to_pylist()
-    fig2, ax2 = plt.subplots(figsize=(6, 5))
-    for mode in modes:
-        gm = [r for r in g if r["mode"] == mode and r["n_eff"] == r["n_eff"] and r["n_eff"] > 0]
-        ax2.scatter(
-            [r["mean_total_intensity"] for r in gm],
-            [r["n_eff"] for r in gm],
-            s=20,
-            alpha=0.6,
-            label=mode,
+    modes = sorted(set(scal_tbl.column("mode").to_pylist()))
+    by_pep = defaultdict(list)
+    for r in pair_rows:
+        by_pep[(r["modified_sequence"], r["charge"], r["mode"])].append(
+            (r["pair_intensity"], r["dp2"])
         )
-    ax2.set_xscale("log")
-    ax2.set_yscale("log")
-    ax2.set_xlabel("mean total fragment intensity (∝ N)")
-    ax2.set_ylabel("fitted N_eff")
-    ax2.set_title("N_eff vs intensity — the bridge to MS1 N")
+
+    # Fig A — the "continuous line": binned ‖Δp̂‖² vs intensity for top peptides, with β=1/β=2 refs.
+    fig, axes = plt.subplots(1, len(modes), figsize=(6.5 * len(modes), 5.2), squeeze=False)
+    for ax, mode in zip(axes[0], modes):
+        peps = sorted([k for k in by_pep if k[2] == mode], key=lambda k: -len(by_pep[k]))[:6]
+        for k in peps:
+            pts = sorted(by_pep[k])
+            xi = np.array([p[0] for p in pts])
+            yi = np.array([p[1] for p in pts])
+            # bin medians
+            edges = np.quantile(np.log10(xi), np.linspace(0, 1, 16))
+            bx, byy = [], []
+            for b in range(len(edges) - 1):
+                m = (np.log10(xi) >= edges[b]) & (np.log10(xi) <= edges[b + 1])
+                if m.sum() >= 5:
+                    bx.append(np.median(xi[m]))
+                    byy.append(np.median(yi[m]))
+            if len(bx) >= 4:
+                ax.plot(
+                    bx, byy, "-o", ms=3, lw=1, alpha=0.7, label=f"{k[0][:9]}+{k[1]} (n={len(pts)})"
+                )
+        # reference slopes anchored to the panel
+        xl = np.array(ax.get_xlim())
+        if xl[0] > 0:
+            x0 = np.array([xi.min(), xi.max()])
+            yl = ax.get_ylim()
+            anchor = np.median([p[1] for k in peps for p in by_pep[k]])
+            ax.plot(
+                x0,
+                anchor * (x0 / np.median(x0)) ** -1.0,
+                "k-",
+                lw=1.4,
+                alpha=0.7,
+                label="β=1 (multinomial)",
+            )
+            ax.plot(
+                x0,
+                anchor * (x0 / np.median(x0)) ** -2.0,
+                "k--",
+                lw=1.0,
+                alpha=0.5,
+                label="β=2 (Gaussian)",
+            )
+            ax.set_ylim(yl)
+        ax.set_xscale("log")
+        ax.set_yscale("log")
+        ax.set_xlabel("pair intensity  I  (∝ N)")
+        ax.set_ylabel("‖Δp̂‖²  between adjacent-intensity spectra")
+        ax.set_title(f"{mode}: shot-noise scaling")
+        ax.legend(fontsize=6.5)
+    fig.tight_layout()
+    fig.savefig(figdir / "exp02_fig_shot_noise_scaling.png", dpi=145)
+    print(f"wrote {figdir / 'exp02_fig_shot_noise_scaling.png'}", flush=True)
+
+    # Fig B — distribution of per-peptide shot-noise slopes, by mode, vs β=1/β=2.
+    fig2, ax2 = plt.subplots(figsize=(7, 5))
+    for m in modes:
+        sl = scal_tbl.filter(pc.equal(scal_tbl.column("mode"), m)).column("slope_low").to_pylist()
+        ax2.hist(
+            [s for s in sl if s == s],
+            bins=24,
+            range=(-3, 0.5),
+            alpha=0.5,
+            label=f"{m} (n={len(sl)})",
+        )
+    ax2.axvline(-1, color="k", lw=1.4, label="β=1 multinomial")
+    ax2.axvline(-2, color="k", ls="--", lw=1.0, label="β=2 Gaussian")
+    ax2.set_xlabel("per-peptide shot-noise scaling slope  (d log‖Δp̂‖² / d log I)")
+    ax2.set_ylabel("peptides")
+    ax2.set_title("Generative-model signature across calibrant peptides")
     ax2.legend(fontsize=8)
     fig2.tight_layout()
-    fig2.savefig(figdir / "exp02_fig2_3_neff_vs_intensity.png", dpi=140)
-    print(f"wrote {figdir / 'exp02_fig2_3_neff_vs_intensity.png'}", flush=True)
+    fig2.savefig(figdir / "exp02_fig_slope_distribution.png", dpi=145)
+    print(f"wrote {figdir / 'exp02_fig_slope_distribution.png'}", flush=True)
 
 
 if __name__ == "__main__":
