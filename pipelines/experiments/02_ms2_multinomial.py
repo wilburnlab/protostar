@@ -179,7 +179,21 @@ def main(argv: list[str] | None = None) -> int:
             continue
         slope, r2 = _fit_through_origin(pq1mp[nonzero], var_k[nonzero])
         n_eff = 1.0 / slope if slope and slope == slope and slope > 0 else float("nan")
+        dof = max(int(nonzero.sum()) - 1, 1)
+        good_neff = n_eff == n_eff and n_eff > 0
+        # cons.deviance_from_bulk[r] = 2·(intensity sum_r)·KL(p̂_r ‖ p̄), i.e. in
+        # *intensity* units. The calibration-free χ² uses the fitted effective ion
+        # count N_eff: 2·N_eff·KL_r = deviance[r]·N_eff / intensity_sum_r. Its mean
+        # over replicates ÷ dof ≈ 1 iff the variance-law N_eff also explains the
+        # per-replicate deviations (a multinomial self-consistency check).
         dev = cons.deviance_from_bulk
+        mean_total = float(totals.mean())
+        if good_neff:
+            g2_neff = float((dev * n_eff / totals.squeeze(1)).mean())
+            intensity_per_ion = mean_total / n_eff  # ≈ gain α — the Part II bridge
+        else:
+            g2_neff = float("nan")
+            intensity_per_ion = float("nan")
         b = cons.basis
         for k in range(b.K):
             if not bool(nonzero[k]):
@@ -207,9 +221,9 @@ def main(argv: list[str] | None = None) -> int:
                 "n_replicates": cons.n_replicates,
                 "n_eff": n_eff,
                 "fit_r2": r2,
-                "mean_total_intensity": float(totals.mean()),
-                "deviance_mean": float(dev.mean()),
-                "deviance_over_dof": float(dev.mean()) / max(int(nonzero.sum()) - 1, 1),
+                "mean_total_intensity": mean_total,
+                "g2_neff_over_dof": g2_neff / dof,
+                "intensity_per_ion": intensity_per_ion,
             }
         )
 
@@ -223,11 +237,16 @@ def main(argv: list[str] | None = None) -> int:
         flush=True,
     )
     if group_tbl.num_rows:
-        med_r2 = float(pc.approximate_median(group_tbl.column("fit_r2")).as_py() or float("nan"))
-        med_dof = float(
-            pc.approximate_median(group_tbl.column("deviance_over_dof")).as_py() or float("nan")
+
+        def _med(col: str) -> float:
+            return float(pc.approximate_median(group_tbl.column(col)).as_py() or float("nan"))
+
+        print(
+            f"median fit R² = {_med('fit_r2'):.3f}  |  "
+            f"median G²/dof (N_eff units) = {_med('g2_neff_over_dof'):.2f} (≈1 if multinomial)  |  "
+            f"median N_eff = {_med('n_eff'):.0f}  |  "
+            f"median intensity/ion ≈ {_med('intensity_per_ion'):.0f} (gain α preview)"
         )
-        print(f"median fit R² = {med_r2:.3f}; median 2N·KL/dof = {med_dof:.2f} (≈1 if multinomial)")
 
     _make_figures(chan_tbl, group_tbl, REPO_ROOT / "results" / "figures")
     return 0
