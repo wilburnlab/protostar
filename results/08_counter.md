@@ -1,4 +1,4 @@
-# 05 — Counter validation (additive-progenitor quantification)
+# 08 — Counter validation (additive-progenitor quantification)
 
 **Status:** planned (stub).
 

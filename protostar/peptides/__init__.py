@@ -11,6 +11,16 @@ extraction / validation and downstream identification.
 needs the ``peptides`` optional extra (``openpyxl``).
 """
 
+from .procal import (
+    PROCAL_SCHEMA_VERSION,
+    PROCAL_SUPPLEMENT_FILE,
+    PROCAL_TABLE,
+    load_procal,
+    parse_procal_supplement,
+    procal_path,
+    procal_sequences,
+    write_procal,
+)
 from .reference import (
     PEPTIDE_REFERENCE_SCHEMA_VERSION,
     PEPTIDE_REFERENCE_TABLE,
@@ -29,12 +39,20 @@ __all__ = [
     "PEPTIDE_REFERENCE_SCHEMA_VERSION",
     "PEPTIDE_REFERENCE_TABLE",
     "POOL_PREFIX_DATASET",
+    "PROCAL_SCHEMA_VERSION",
+    "PROCAL_SUPPLEMENT_FILE",
+    "PROCAL_TABLE",
     "SUPPLEMENT_FILES",
     "load_pool_targets",
+    "load_procal",
     "load_reference",
+    "parse_procal_supplement",
     "parse_supplement",
     "pool_prefix",
+    "procal_path",
+    "procal_sequences",
     "reference_path",
     "resolve_pool_dataset",
+    "write_procal",
     "write_reference",
 ]
