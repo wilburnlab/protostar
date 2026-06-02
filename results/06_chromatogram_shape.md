@@ -1,4 +1,4 @@
-# 01 — Chromatographic peak shape
+# 06 — Chromatographic peak shape
 
 **Status:** planned (stub).
 

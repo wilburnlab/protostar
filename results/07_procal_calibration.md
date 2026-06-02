@@ -1,4 +1,4 @@
-# 04 — PROCAL per-file calibration
+# 07 — PROCAL per-file calibration
 
 **Status:** planned (stub).
 
