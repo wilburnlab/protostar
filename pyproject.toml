@@ -44,6 +44,12 @@ target-version = "py312"
 select = ["E", "F", "W", "I"]  # pycodestyle, pyflakes, warnings, import-sorting
 ignore = ["E501"]              # ruff format wraps code; long URLs / string literals are fine
 
+[tool.ruff.lint.per-file-ignores]
+# Experiment drivers sit under pipelines/experiments/ and must insert pipelines/
+# on sys.path and import _common (the libstdc++ pin) before constellation — so
+# imports are deliberately ordered and follow a code line.
+"pipelines/experiments/*" = ["E402", "I001"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = ["network: hits live PRIDE / Zenodo endpoints (run with --run-network)"]
