@@ -14,7 +14,9 @@ Shardable for SLURM arrays: ``--shard i --n-shards N`` processes search zips
 (not ESS) to avoid inode blow-up.
 
 Output rows: dataset, modified_sequence, charge, mode, raw_file, scan,
-total_intensity, props (list<double>, the basis-aligned fragment proportions).
+total_intensity, iit (ion injection time, ms), ion_proxy (= total_intensity·iit,
+∝ ion count N since intensity is per-time), props (list<double>, the
+basis-aligned fragment proportions).
 """
 
 from __future__ import annotations
@@ -62,23 +64,28 @@ def _enumerate_zips(droot, datasets, exclude):
     return out
 
 
-def _scan_modes(bundle_dir: Path) -> dict[int, str]:
-    """{scan: 'ANALYZER_activation_CE'} from scan_metadata — the per-scan mode
-    (the mandated column source, not a filter-string re-parse)."""
+def _scan_meta(bundle_dir: Path) -> tuple[dict[int, str], dict[int, float]]:
+    """Per-scan ``mode`` (``ANALYZER_activation_CE``) and ``iit`` (ion injection
+    time, ms) from scan_metadata. Intensity is per-time, so the ion count is
+    ``N ∝ I·iit`` — the iit is required to put spectra on a true ion-count axis."""
     t = pq.read_table(
         bundle_dir / "scan_metadata.parquet",
-        columns=["scan", "analyzer", "activation_type", "collision_energy"],
+        columns=["scan", "analyzer", "activation_type", "collision_energy", "iit"],
     )
     modes: dict[int, str] = {}
-    for s, a, act, ce in zip(
+    iits: dict[int, float] = {}
+    for s, a, act, ce, it in zip(
         t.column("scan").to_pylist(),
         t.column("analyzer").to_pylist(),
         t.column("activation_type").to_pylist(),
         t.column("collision_energy").to_pylist(),
+        t.column("iit").to_pylist(),
     ):
         if a and act and ce is not None:
             modes[int(s)] = f"{a}_{act}_{round(ce)}"
-    return modes
+        if it is not None:
+            iits[int(s)] = float(it)
+    return modes, iits
 
 
 def _peptide_filter(psms, scope):
@@ -119,7 +126,7 @@ def main(argv: list[str] | None = None) -> int:
             sub = psms.filter(pc.equal(psms.column("raw_file"), raw_file))
             try:
                 peaks = pq.read_table(bundle / "peaks.parquet")
-                modes = _scan_modes(bundle)
+                modes, iits = _scan_meta(bundle)
                 trace = ms2_extract.extract_ms2_fragments(peaks, sub)
                 scan_spectra = ms2_extract.trace_to_scan_spectra(trace)
             except Exception as exc:  # noqa: BLE001
@@ -132,7 +139,8 @@ def main(argv: list[str] | None = None) -> int:
             ):
                 spec = scan_spectra.get(sc)
                 mode = modes.get(sc)
-                if spec is None or spec[0].numel() == 0 or mode is None:
+                iit = iits.get(sc)
+                if spec is None or spec[0].numel() == 0 or mode is None or iit is None:
                     continue
                 if ms not in basis_cache:
                     try:
@@ -155,6 +163,8 @@ def main(argv: list[str] | None = None) -> int:
                         "raw_file": raw_file,
                         "scan": int(sc),
                         "total_intensity": total,
+                        "iit": iit,
+                        "ion_proxy": total * iit,  # ∝ N (ion count); intensity is per-time
                         "props": (vec / total).tolist(),
                     }
                 )
