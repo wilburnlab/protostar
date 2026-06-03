@@ -166,14 +166,17 @@ def main(argv: list[str] | None = None) -> int:
             if peaks is None:
                 continue
             trace = ms2_extract.extract_ms2_fragments(peaks, sub)
-            scan_spectra = ms2_extract.trace_to_scan_spectra(trace)
-            for ms, ch, md, sc in zip(
-                sub.column("modified_sequence").to_pylist(),
-                sub.column("charge").to_pylist(),
-                sub.column("mode").to_pylist(),
-                sub.column("scan").to_pylist(),
+            # keyed by target_id (= row index into `sub`), NOT scan, so a chimeric
+            # scan's other PSMs don't pool into this peptide's spectrum.
+            target_spectra = ms2_extract.trace_to_target_spectra(trace)
+            for target_id, (ms, ch, md) in enumerate(
+                zip(
+                    sub.column("modified_sequence").to_pylist(),
+                    sub.column("charge").to_pylist(),
+                    sub.column("mode").to_pylist(),
+                )
             ):
-                spec = scan_spectra.get(sc)
+                spec = target_spectra.get(target_id)
                 if spec is not None and spec[0].numel() > 0:
                     spectra_by_group[(ms, int(ch), md)].append(spec)
         if (i + 1) % 25 == 0 or i + 1 == len(searches):

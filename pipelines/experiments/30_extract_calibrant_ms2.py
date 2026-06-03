@@ -141,20 +141,24 @@ def main(argv: list[str] | None = None) -> int:
                 peaks = pq.read_table(bundle / "peaks.parquet")
                 modes, meta = _scan_meta(bundle)
                 trace = ms2_extract.extract_ms2_fragments(peaks, sub)
-                scan_channels = ms2_extract.trace_to_scan_channels(trace)
+                # keyed by target_id (= row index into `sub`), NOT scan, so a
+                # chimeric scan's other PSMs don't leak onto this peptide's basis.
+                target_channels = ms2_extract.trace_to_target_channels(trace)
             except Exception as exc:  # noqa: BLE001
                 print(f"  [skip bundle] {raw_file}: {exc}", flush=True)
                 continue
-            for ms, ch, sc, perr, score, dscore, pep in zip(
-                sub.column("modified_sequence").to_pylist(),
-                sub.column("charge").to_pylist(),
-                sub.column("scan").to_pylist(),
-                sub.column("mass_error_ppm").to_pylist(),
-                sub.column("score").to_pylist(),
-                sub.column("delta_score").to_pylist(),
-                sub.column("pep").to_pylist(),
+            for target_id, (ms, ch, sc, perr, score, dscore, pep) in enumerate(
+                zip(
+                    sub.column("modified_sequence").to_pylist(),
+                    sub.column("charge").to_pylist(),
+                    sub.column("scan").to_pylist(),
+                    sub.column("mass_error_ppm").to_pylist(),
+                    sub.column("score").to_pylist(),
+                    sub.column("delta_score").to_pylist(),
+                    sub.column("pep").to_pylist(),
+                )
             ):
-                channels = scan_channels.get(sc)
+                channels = target_channels.get(target_id)
                 mode = modes.get(sc)
                 m = meta.get(sc)
                 iit = m["iit"] if m else None

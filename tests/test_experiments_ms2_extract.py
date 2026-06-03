@@ -35,29 +35,56 @@ def test_xic_targets_from_psms():
     assert t.column("precursor_charge").to_pylist() == [2, 3]
 
 
-def test_trace_to_scan_spectra_groups_by_scan():
+def test_trace_to_target_spectra_groups_by_target():
+    # targets 0 and 1 share scan 1; grouping must isolate them by target_id,
+    # never pool by scan.
     trace = pa.table(
         {
-            "scan": pa.array([1, 1, 2], pa.int32()),
+            "target_id": pa.array([0, 0, 1], pa.int64()),
+            "scan": pa.array([1, 1, 1], pa.int32()),
             "mz_theoretical": [100.0, 200.0, 150.0],
             "intensity": [10.0, 20.0, 5.0],
         }
     )
-    out = ms2_extract.trace_to_scan_spectra(trace)
-    assert set(out) == {1, 2}
-    mz1, in1 = out[1]
-    assert torch.allclose(mz1, torch.tensor([100.0, 200.0], dtype=torch.float64))
-    assert torch.allclose(in1, torch.tensor([10.0, 20.0], dtype=torch.float64))
-    assert out[2][1].tolist() == [5.0]
+    out = ms2_extract.trace_to_target_spectra(trace)
+    assert set(out) == {0, 1}
+    mz0, in0 = out[0]
+    assert torch.allclose(mz0, torch.tensor([100.0, 200.0], dtype=torch.float64))
+    assert torch.allclose(in0, torch.tensor([10.0, 20.0], dtype=torch.float64))
+    assert out[1][1].tolist() == [5.0]  # NOT merged with target 0 despite same scan
 
 
-def test_trace_to_scan_spectra_min_intensity():
+def test_trace_to_target_spectra_min_intensity():
     trace = pa.table(
         {
+            "target_id": pa.array([0, 1], pa.int64()),
             "scan": pa.array([1, 2], pa.int32()),
             "mz_theoretical": [100.0, 150.0],
             "intensity": [10.0, 5.0],
         }
     )
-    out = ms2_extract.trace_to_scan_spectra(trace, min_intensity=6.0)
-    assert set(out) == {1}  # scan 2 dropped (intensity 5 <= 6)
+    out = ms2_extract.trace_to_target_spectra(trace, min_intensity=6.0)
+    assert set(out) == {0}  # target 1 dropped (intensity 5 <= 6)
+
+
+def test_trace_to_target_channels_isolates_chimeric_scan():
+    # Two PSMs (target 0, target 1) in the SAME scan, each with a fragment at the
+    # SAME (ion_type, position, charge) channel but a DIFFERENT real m/z. Keying on
+    # target_id must keep them apart, so a neighbour's fragment is never projected
+    # onto this peptide's basis by (ion_type, position, charge) (PR #14 / Codex).
+    trace = pa.table(
+        {
+            "target_id": pa.array([0, 1], pa.int64()),
+            "scan": pa.array([5, 5], pa.int32()),
+            "ion_type": pa.array([4, 4], pa.int8()),
+            "position": pa.array([2, 2], pa.int32()),
+            "fragment_charge": pa.array([1, 1], pa.int32()),
+            "intensity": [100.0, 999.0],
+            "mz_error_ppm": [1.0, -3.0],
+            "isotope": pa.array([0, 0], pa.int8()),
+        }
+    )
+    out = ms2_extract.trace_to_target_channels(trace)
+    assert set(out) == {0, 1}
+    assert out[0][(4, 2, 1)][0] == 100.0  # target 0 keeps only its own fragment...
+    assert out[1][(4, 2, 1)][0] == 999.0  # ...not merged into 1099 by shared scan

@@ -101,46 +101,53 @@ def extract_ms2_fragments(
     return parts[0] if len(parts) == 1 else pa.concat_tables(parts)
 
 
-def trace_to_scan_spectra(
+def trace_to_target_spectra(
     trace: pa.Table, *, min_intensity: float = 0.0
 ) -> dict[int, tuple[torch.Tensor, torch.Tensor]]:
-    """Group an XIC level-2 trace into per-scan fragment spectra
-    ``{scan: (mz_theoretical, intensity)}`` over matched fragments.
+    """Group an XIC level-2 trace into per-**target (PSM)** fragment spectra
+    ``{target_id: (mz_theoretical, intensity)}`` over matched fragments.
 
-    The theoretical m/z is used as the alignment key (it is exact against the
-    consensus basis), so ``build_consensus`` maps each fragment to its channel
-    with no second tolerance. A pure transform — unit-testable without data."""
-    scans = trace.column("scan").to_pylist()
+    Keyed on ``target_id`` (not ``scan``) so each PSM's fragments stay isolated:
+    a chimeric scan can carry rows for several targets, and a neighbour's
+    fragments must not be pooled into this peptide's spectrum. The theoretical
+    m/z is the alignment key (exact against the consensus basis), so
+    ``build_consensus`` maps each fragment to its channel with no second
+    tolerance. A pure transform — unit-testable without data."""
+    tid = trace.column("target_id").to_pylist()
     mz = trace.column("mz_theoretical").to_pylist()
     inten = trace.column("intensity").to_pylist()
-    by_scan: dict[int, tuple[list, list]] = defaultdict(lambda: ([], []))
-    for s, m, it in zip(scans, mz, inten):
+    by_target: dict[int, tuple[list, list]] = defaultdict(lambda: ([], []))
+    for t, m, it in zip(tid, mz, inten):
         if it is not None and it > min_intensity and m is not None:
-            by_scan[s][0].append(m)
-            by_scan[s][1].append(it)
+            by_target[int(t)][0].append(m)
+            by_target[int(t)][1].append(it)
     return {
-        s: (
+        t: (
             torch.tensor(ms, dtype=torch.float64),
             torch.tensor(its, dtype=torch.float64),
         )
-        for s, (ms, its) in by_scan.items()
+        for t, (ms, its) in by_target.items()
     }
 
 
-def trace_to_scan_channels(
+def trace_to_target_channels(
     trace: pa.Table, *, min_intensity: float = 0.0, isotope: int = 0
 ) -> dict[int, dict[tuple[int, int, int], list[float]]]:
-    """Group an XIC level-2 trace by scan and **fragment-channel identity**
-    ``(ion_type, position, fragment_charge)``, accumulating intensity and the
-    intensity-weighted m/z error.
+    """Group an XIC level-2 trace by **target (PSM)** and fragment-channel
+    identity ``(ion_type, position, fragment_charge)``, accumulating intensity
+    and the intensity-weighted m/z error.
 
-    Returns ``{scan: {(ion_type, position, charge): [Σ intensity, Σ
-    intensity·mz_error_ppm]}}``. The XIC extraction already matched observed
-    peaks to theoretical fragments (with the analyzer-appropriate tolerance)
-    and recorded ``mz_error_ppm`` per fragment, so the error is simply carried
-    through here — no second m/z match. Only the monoisotopic peak
-    (``isotope``) is kept, matching the consensus basis. A pure transform."""
-    scan = trace.column("scan").to_pylist()
+    Returns ``{target_id: {(ion_type, position, charge): [Σ intensity, Σ
+    intensity·mz_error_ppm]}}``. Keying on ``target_id`` (not ``scan``) keeps
+    each PSM isolated: a chimeric scan may carry rows for several targets, and a
+    neighbour's fragment must not be projected onto this peptide's basis by
+    matching (ion_type, position, charge) at a *different* theoretical m/z. The
+    XIC extraction already matched observed peaks to theoretical fragments (with
+    the analyzer-appropriate tolerance) and recorded ``mz_error_ppm`` per
+    fragment, so the error is carried through — no second m/z match. Only the
+    monoisotopic peak (``isotope``) is kept, matching the consensus basis. A
+    pure transform."""
+    tid = trace.column("target_id").to_pylist()
     it_type = trace.column("ion_type").to_pylist()
     pos = trace.column("position").to_pylist()
     fch = trace.column("fragment_charge").to_pylist()
@@ -154,18 +161,18 @@ def trace_to_scan_channels(
         v = inten[i]
         if v is None or v <= min_intensity or (iso[i] is not None and iso[i] != isotope):
             continue
-        acc = out[scan[i]][(int(it_type[i]), int(pos[i]), int(fch[i]))]
+        acc = out[int(tid[i])][(int(it_type[i]), int(pos[i]), int(fch[i]))]
         acc[0] += v
         e = err[i]
         if e is not None:
             acc[1] += v * e
-    return {s: dict(ch) for s, ch in out.items()}
+    return {t: dict(ch) for t, ch in out.items()}
 
 
 def channels_to_basis(
     channels: dict[tuple[int, int, int], list[float]], basis
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Project a scan's channel accumulator (from :func:`trace_to_scan_channels`)
+    """Project a target's channel accumulator (from :func:`trace_to_target_channels`)
     onto the fixed K-channel ``basis`` order.
 
     Returns ``(intensity[K], mz_error_ppm[K])`` — the intensity-weighted signed
@@ -197,7 +204,7 @@ __all__ = [
     "analyzer_tolerance",
     "xic_targets_from_psms",
     "extract_ms2_fragments",
-    "trace_to_scan_spectra",
-    "trace_to_scan_channels",
+    "trace_to_target_spectra",
+    "trace_to_target_channels",
     "channels_to_basis",
 ]
