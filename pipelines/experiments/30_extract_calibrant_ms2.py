@@ -34,7 +34,6 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
-from constellation.massspec.spectra.consensus import align_to_basis
 from protostar.experiments import consensus_assembly, ms2_extract, scans
 
 DEFAULT_DATASETS = ("Zolg2017", "Gessulat2019", "Wilhelm2021")
@@ -64,28 +63,42 @@ def _enumerate_zips(droot, datasets, exclude):
     return out
 
 
-def _scan_meta(bundle_dir: Path) -> tuple[dict[int, str], dict[int, float]]:
-    """Per-scan ``mode`` (``ANALYZER_activation_CE``) and ``iit`` (ion injection
-    time, ms) from scan_metadata. Intensity is per-time, so the ion count is
-    ``N ∝ I·iit`` — the iit is required to put spectra on a true ion-count axis."""
+#: Per-scan scan_metadata fields carried into the rows (alongside the ``mode``
+#: string). ``iit``+``tic`` drive the ion-count axis and assigned fraction;
+#: ``rt`` localizes co-elution; the AGC/space-charge readouts (``agc_fill``,
+#: ``agc_target``, ``space_charge_comp_ppm``) let the high-abundance
+#: detector-nonlinearity hypothesis be tested against the instrument's own
+#: telemetry; ``base_peak_intensity``/``peak_count`` index saturation/complexity.
+_META_FIELDS = (
+    "iit",
+    "tic",
+    "rt",
+    "agc_fill",
+    "agc_target",
+    "space_charge_comp_ppm",
+    "base_peak_intensity",
+    "peak_count",
+)
+
+
+def _scan_meta(bundle_dir: Path) -> tuple[dict[int, str], dict[int, dict]]:
+    """Per-scan ``mode`` (``ANALYZER_activation_CE``) and a metadata panel
+    (``_META_FIELDS``) from scan_metadata. Intensity is per-time, so the ion
+    count is ``N ∝ I·iit`` — iit puts spectra on a true ion-count axis."""
     t = pq.read_table(
         bundle_dir / "scan_metadata.parquet",
-        columns=["scan", "analyzer", "activation_type", "collision_energy", "iit"],
+        columns=["scan", "analyzer", "activation_type", "collision_energy", *_META_FIELDS],
     )
+    cols = {c: t.column(c).to_pylist() for c in t.column_names}
     modes: dict[int, str] = {}
-    iits: dict[int, float] = {}
-    for s, a, act, ce, it in zip(
-        t.column("scan").to_pylist(),
-        t.column("analyzer").to_pylist(),
-        t.column("activation_type").to_pylist(),
-        t.column("collision_energy").to_pylist(),
-        t.column("iit").to_pylist(),
-    ):
+    meta: dict[int, dict] = {}
+    for i in range(t.num_rows):
+        s = int(cols["scan"][i])
+        a, act, ce = cols["analyzer"][i], cols["activation_type"][i], cols["collision_energy"][i]
         if a and act and ce is not None:
-            modes[int(s)] = f"{a}_{act}_{round(ce)}"
-        if it is not None:
-            iits[int(s)] = float(it)
-    return modes, iits
+            modes[s] = f"{a}_{act}_{round(ce)}"
+        meta[s] = {f: cols[f][i] for f in _META_FIELDS}
+    return modes, meta
 
 
 def _peptide_filter(psms, scope):
@@ -126,21 +139,26 @@ def main(argv: list[str] | None = None) -> int:
             sub = psms.filter(pc.equal(psms.column("raw_file"), raw_file))
             try:
                 peaks = pq.read_table(bundle / "peaks.parquet")
-                modes, iits = _scan_meta(bundle)
+                modes, meta = _scan_meta(bundle)
                 trace = ms2_extract.extract_ms2_fragments(peaks, sub)
-                scan_spectra = ms2_extract.trace_to_scan_spectra(trace)
+                scan_channels = ms2_extract.trace_to_scan_channels(trace)
             except Exception as exc:  # noqa: BLE001
                 print(f"  [skip bundle] {raw_file}: {exc}", flush=True)
                 continue
-            for ms, ch, sc in zip(
+            for ms, ch, sc, perr, score, dscore, pep in zip(
                 sub.column("modified_sequence").to_pylist(),
                 sub.column("charge").to_pylist(),
                 sub.column("scan").to_pylist(),
+                sub.column("mass_error_ppm").to_pylist(),
+                sub.column("score").to_pylist(),
+                sub.column("delta_score").to_pylist(),
+                sub.column("pep").to_pylist(),
             ):
-                spec = scan_spectra.get(sc)
+                channels = scan_channels.get(sc)
                 mode = modes.get(sc)
-                iit = iits.get(sc)
-                if spec is None or spec[0].numel() == 0 or mode is None or iit is None:
+                m = meta.get(sc)
+                iit = m["iit"] if m else None
+                if not channels or mode is None or iit is None:
                     continue
                 if ms not in basis_cache:
                     try:
@@ -150,7 +168,10 @@ def main(argv: list[str] | None = None) -> int:
                 basis = basis_cache[ms]
                 if basis is None:
                     continue
-                vec = align_to_basis(spec[0], spec[1], basis, tolerance=20.0, tolerance_unit="ppm")
+                # Map fragments to the basis by exact (ion_type, position, charge);
+                # the XIC trace's per-fragment mz_error_ppm is carried through
+                # (intensity-weighted) — no second m/z match.
+                vec, err_ppm = ms2_extract.channels_to_basis(channels, basis)
                 total = float(vec.sum())
                 if total <= 0:
                     continue
@@ -163,9 +184,27 @@ def main(argv: list[str] | None = None) -> int:
                         "raw_file": raw_file,
                         "scan": int(sc),
                         "total_intensity": total,
-                        "iit": iit,
-                        "ion_proxy": total * iit,  # ∝ N (ion count); intensity is per-time
+                        "iit": float(iit),
+                        "ion_proxy": total * float(iit),  # ∝ N (ion count); intensity is per-time
                         "props": (vec / total).tolist(),
+                        # per-channel intensity-weighted signed m/z error (ppm); NaN unmatched.
+                        "mz_err_ppm": err_ppm.tolist(),
+                        # precursor MS1 mass error (ppm, MaxQuant) — MS1 co-isolation signature.
+                        "precursor_mz_err_ppm": perr,
+                        # full MS2 TIC -> assigned fraction = total_intensity / scan_tic.
+                        "scan_tic": m["tic"],
+                        # retention time (s) — co-elution localization (hypothesis 1).
+                        "rt": m["rt"],
+                        # AGC / space-charge telemetry — the detector-nonlinearity test (hypothesis 2).
+                        "agc_fill": m["agc_fill"],
+                        "agc_target": m["agc_target"],
+                        "space_charge_comp_ppm": m["space_charge_comp_ppm"],
+                        "base_peak_intensity": m["base_peak_intensity"],
+                        "peak_count": m["peak_count"],
+                        # MaxQuant PSM confidence — does KL track ID quality?
+                        "score": score,
+                        "delta_score": dscore,
+                        "pep": pep,
                     }
                 )
         if (k + 1) % 10 == 0 or k + 1 == len(mine):

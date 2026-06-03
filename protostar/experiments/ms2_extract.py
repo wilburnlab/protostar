@@ -127,10 +127,77 @@ def trace_to_scan_spectra(
     }
 
 
+def trace_to_scan_channels(
+    trace: pa.Table, *, min_intensity: float = 0.0, isotope: int = 0
+) -> dict[int, dict[tuple[int, int, int], list[float]]]:
+    """Group an XIC level-2 trace by scan and **fragment-channel identity**
+    ``(ion_type, position, fragment_charge)``, accumulating intensity and the
+    intensity-weighted m/z error.
+
+    Returns ``{scan: {(ion_type, position, charge): [Σ intensity, Σ
+    intensity·mz_error_ppm]}}``. The XIC extraction already matched observed
+    peaks to theoretical fragments (with the analyzer-appropriate tolerance)
+    and recorded ``mz_error_ppm`` per fragment, so the error is simply carried
+    through here — no second m/z match. Only the monoisotopic peak
+    (``isotope``) is kept, matching the consensus basis. A pure transform."""
+    scan = trace.column("scan").to_pylist()
+    it_type = trace.column("ion_type").to_pylist()
+    pos = trace.column("position").to_pylist()
+    fch = trace.column("fragment_charge").to_pylist()
+    inten = trace.column("intensity").to_pylist()
+    err = trace.column("mz_error_ppm").to_pylist()
+    iso = trace.column("isotope").to_pylist()
+    out: dict[int, dict[tuple[int, int, int], list[float]]] = defaultdict(
+        lambda: defaultdict(lambda: [0.0, 0.0])
+    )
+    for i in range(trace.num_rows):
+        v = inten[i]
+        if v is None or v <= min_intensity or (iso[i] is not None and iso[i] != isotope):
+            continue
+        acc = out[scan[i]][(int(it_type[i]), int(pos[i]), int(fch[i]))]
+        acc[0] += v
+        e = err[i]
+        if e is not None:
+            acc[1] += v * e
+    return {s: dict(ch) for s, ch in out.items()}
+
+
+def channels_to_basis(
+    channels: dict[tuple[int, int, int], list[float]], basis
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Project a scan's channel accumulator (from :func:`trace_to_scan_channels`)
+    onto the fixed K-channel ``basis`` order.
+
+    Returns ``(intensity[K], mz_error_ppm[K])`` — the intensity-weighted signed
+    m/z error per channel (``NaN`` where unmatched). Mapping is by exact
+    ``(ion_type, position, charge)`` identity, so it is unambiguous (no second
+    m/z tolerance) and the intensity vector reproduces the theoretical-m/z
+    alignment."""
+    k = int(basis.K)
+    vec = torch.zeros(k, dtype=torch.float64)
+    err = torch.full((k,), float("nan"), dtype=torch.float64)
+    if not channels:
+        return vec, err
+    index = {
+        (int(a), int(b), int(c)): j
+        for j, (a, b, c) in enumerate(
+            zip(basis.ion_type.tolist(), basis.position.tolist(), basis.charge.tolist())
+        )
+    }
+    for key, (sum_i, sum_ie) in channels.items():
+        j = index.get(key)
+        if j is not None and sum_i > 0:
+            vec[j] = sum_i
+            err[j] = sum_ie / sum_i
+    return vec, err
+
+
 __all__ = [
     "ANALYZER_TOLERANCE",
     "analyzer_tolerance",
     "xic_targets_from_psms",
     "extract_ms2_fragments",
     "trace_to_scan_spectra",
+    "trace_to_scan_channels",
+    "channels_to_basis",
 ]
