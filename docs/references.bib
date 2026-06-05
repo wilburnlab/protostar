@@ -1,0 +1,143 @@
+% ProToStaR — references for the poster / manuscript introduction.
+%
+% Search-engine / PSM-scoring and spectral-similarity citations from the
+% background section, plus the three ProteomeTools dataset papers. All fields
+% (authors, title, journal, year, volume, issue, pages, DOI) were verified
+% against Crossref (api.crossref.org), 2026-06.
+%
+% Notes:
+%   - Journal names are intentionally ISO-abbreviated (poster preference);
+%     swap to full titles for a manuscript if a target journal requires it.
+%   - Author lists are complete; let your .bst/biblatex style truncate to
+%     "et al." for display.
+%   - Non-ASCII names use LaTeX escapes ({\"a}) for classic-BibTeX portability.
+%   - perkins1999mascot's DOI contains angle brackets and a semicolon (a Wiley
+%     SICI DOI); it is correct as written but some LaTeX doi/url setups want it
+%     wrapped (\url{...}) or percent-encoded.
+
+% ── Database search engines & PSM scoring/validation ──────────────────────
+
+@article{eng1994sequest,
+  author  = {Eng, J. K. and McCormack, A. L. and Yates, J. R.},
+  title   = {{An approach to correlate tandem mass spectral data of peptides with amino acid sequences in a protein database}},
+  journal = {J. Am. Soc. Mass Spectrom.},
+  year    = {1994},
+  volume  = {5},
+  number  = {11},
+  pages   = {976--989},
+  doi     = {10.1016/1044-0305(94)80016-2},
+}
+
+@article{perkins1999mascot,
+  author  = {Perkins, D. N. and Pappin, D. J. C. and Creasy, D. M. and Cottrell, J. S.},
+  title   = {{Probability-based protein identification by searching sequence databases using mass spectrometry data}},
+  journal = {Electrophoresis},
+  year    = {1999},
+  volume  = {20},
+  number  = {18},
+  pages   = {3551--3567},
+  doi     = {10.1002/(SICI)1522-2683(19991201)20:18<3551::AID-ELPS3551>3.0.CO;2-2},
+}
+
+@article{cox2011andromeda,
+  author  = {Cox, J. and Neuhauser, N. and Michalski, A. and Scheltema, R. A. and Olsen, J. V. and Mann, M.},
+  title   = {{Andromeda: a peptide search engine integrated into the MaxQuant environment}},
+  journal = {J. Proteome Res.},
+  year    = {2011},
+  volume  = {10},
+  number  = {4},
+  pages   = {1794--1805},
+  doi     = {10.1021/pr101065j},
+}
+
+@article{keller2002peptideprophet,
+  author  = {Keller, A. and Nesvizhskii, A. I. and Kolker, E. and Aebersold, R.},
+  title   = {{Empirical statistical model to estimate the accuracy of peptide identifications made by MS/MS and database search}},
+  journal = {Anal. Chem.},
+  year    = {2002},
+  volume  = {74},
+  number  = {20},
+  pages   = {5383--5392},
+  doi     = {10.1021/ac025747h},
+}
+
+@article{kall2007percolator,
+  author  = {K{\"a}ll, L. and Canterbury, J. D. and Weston, J. and Noble, W. S. and MacCoss, M. J.},
+  title   = {{Semi-supervised learning for peptide identification from shotgun proteomics datasets}},
+  journal = {Nat. Methods},
+  year    = {2007},
+  volume  = {4},
+  number  = {11},
+  pages   = {923--925},
+  doi     = {10.1038/nmeth1113},
+}
+
+@article{elias2007targetdecoy,
+  author  = {Elias, J. E. and Gygi, S. P.},
+  title   = {{Target-decoy search strategy for increased confidence in large-scale protein identifications by mass spectrometry}},
+  journal = {Nat. Methods},
+  year    = {2007},
+  volume  = {4},
+  number  = {3},
+  pages   = {207--214},
+  doi     = {10.1038/nmeth1019},
+}
+
+% ── Spectral-library similarity scoring ───────────────────────────────────
+
+@article{stein1994libsearch,
+  author  = {Stein, S. E. and Scott, D. R.},
+  title   = {{Optimization and testing of mass spectral library search algorithms for compound identification}},
+  journal = {J. Am. Soc. Mass Spectrom.},
+  year    = {1994},
+  volume  = {5},
+  number  = {9},
+  pages   = {859--866},
+  doi     = {10.1016/1044-0305(94)87009-8},
+}
+
+@article{li2021spectralentropy,
+  author  = {Li, Y. and Kind, T. and Folz, J. and Vaniya, A. and Mehta, S. S. and Fiehn, O.},
+  title   = {{Spectral entropy outperforms MS/MS dot product similarity for small-molecule compound identification}},
+  journal = {Nat. Methods},
+  year    = {2021},
+  volume  = {18},
+  number  = {12},
+  pages   = {1524--1531},
+  doi     = {10.1038/s41592-021-01331-z},
+}
+
+% ── ProteomeTools datasets ────────────────────────────────────────────────
+
+@article{zolg2017proteometools,
+  author  = {Zolg, D. P. and Wilhelm, M. and Schnatbaum, K. and Zerweck, J. and Knaute, T. and Delanghe, B. and Bailey, D. J. and Gessulat, S. and Ehrlich, H.-C. and Weininger, M. and Yu, P. and Schlegl, J. and Kramer, K. and Schmidt, T. and Kusebauch, U. and Deutsch, E. W. and Aebersold, R. and Moritz, R. L. and Wenschuh, H. and Moehring, T. and Aiche, S. and Huhmer, A. and Reimer, U. and Kuster, B.},
+  title   = {{Building ProteomeTools based on a complete synthetic human proteome}},
+  journal = {Nat. Methods},
+  year    = {2017},
+  volume  = {14},
+  number  = {3},
+  pages   = {259--262},
+  doi     = {10.1038/nmeth.4153},
+}
+
+@article{gessulat2019prosit,
+  author  = {Gessulat, S. and Schmidt, T. and Zolg, D. P. and Samaras, P. and Schnatbaum, K. and Zerweck, J. and Knaute, T. and Rechenberger, J. and Delanghe, B. and Huhmer, A. and Reimer, U. and Ehrlich, H.-C. and Aiche, S. and Kuster, B. and Wilhelm, M.},
+  title   = {{Prosit: proteome-wide prediction of peptide tandem mass spectra by deep learning}},
+  journal = {Nat. Methods},
+  year    = {2019},
+  volume  = {16},
+  number  = {6},
+  pages   = {509--518},
+  doi     = {10.1038/s41592-019-0426-7},
+}
+
+@article{wilhelm2021immunopeptidomics,
+  author  = {Wilhelm, M. and Zolg, D. P. and Graber, M. and Gessulat, S. and Schmidt, T. and Schnatbaum, K. and Schwencke-Westphal, C. and Seifert, P. and {de Andrade Kr{\"a}tzig}, N. and Zerweck, J. and Knaute, T. and Br{\"a}unlein, E. and Samaras, P. and Lautenbacher, L. and Klaeger, S. and Wenschuh, H. and Rad, R. and Delanghe, B. and Huhmer, A. and Carr, S. A. and Clauser, K. R. and Krackhardt, A. M. and Reimer, U. and Kuster, B.},
+  title   = {{Deep learning boosts sensitivity of mass spectrometry-based immunopeptidomics}},
+  journal = {Nat. Commun.},
+  year    = {2021},
+  volume  = {12},
+  number  = {1},
+  pages   = {3346},
+  doi     = {10.1038/s41467-021-23713-9},
+}
