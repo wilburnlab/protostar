@@ -1,7 +1,7 @@
 """``.raw`` -> parquet-bundle conversion drivers (the ``proc/`` tree).
 
 Thin orchestration over Constellation's Thermo ``.raw`` reader
-(``massspec.io.thermo.convert_batch``). Each ``.raw`` becomes a bundle
+(``massspec.readers.thermo.convert_batch``). Each ``.raw`` becomes a bundle
 directory (``manifest.json`` + ``peaks.parquet`` + ``scan_metadata.parquet`` +
 ``acquisition_metadata.parquet``); per-scan filter strings are recorded so
 fragmentation mode is recoverable without pre-splitting files. Bundles are

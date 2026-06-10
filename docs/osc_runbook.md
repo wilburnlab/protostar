@@ -31,7 +31,7 @@ cd ~/protostar
 
 # sanity:
 ls config/manifests/         # Zolg2017.json Gessulat2019.json Wilhelm2021.json (committed)
-python -c "from constellation.massspec.io.thermo import is_thermo_available; print('thermo:', is_thermo_available())"
+python -c "from constellation.massspec.readers.thermo import is_thermo_available; print('thermo:', is_thermo_available())"
 ```
 
 ## 3. Move existing data + download the rest (stage 00)
@@ -125,7 +125,7 @@ empty `.raw` gracefully instead of raising is tracked in `constellation_contribu
       import pythonnet; print("pythonnet: OK")
   except Exception as e:
       print("pythonnet: MISSING ->", e)
-  from constellation.massspec.io.thermo._netruntime import get_dll_dir, _missing_dlls
+  from constellation.massspec.readers.thermo._netruntime import get_dll_dir, _missing_dlls
   d = get_dll_dir(); print("dll_dir:", d)
   print("missing DLLs:", _missing_dlls(d) if d else "registry found nothing")
   PY

@@ -1,6 +1,6 @@
 """Drive Constellation's Thermo ``.raw`` → parquet-bundle conversion.
 
-Thin orchestration over ``constellation.massspec.io.thermo.convert_batch``:
+Thin orchestration over ``constellation.massspec.readers.thermo.convert_batch``:
 protostar owns only file selection (which ``.raw`` to convert, shard/limit for
 SLURM arrays) and result reconciliation. The conversion itself — spawn-mode
 workers, skip-on-existing-``manifest.json`` resume, source SHA-256, the
@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from constellation.core.progress import ProgressCallback
-from constellation.massspec.io.thermo import BatchResult, convert_batch
+from constellation.massspec.readers.thermo import BatchResult, convert_batch
 
 DEFAULT_RT_BIN_WIDTH_S = 60.0
 DEFAULT_BATCH_SIZE = 64

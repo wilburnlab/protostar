@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Stage 10 — convert ``.raw`` into Constellation parquet bundles (``proc/``).
 
-Drives ``constellation.massspec.io.thermo.convert_batch`` over a dataset's
+Drives ``constellation.massspec.readers.thermo.convert_batch`` over a dataset's
 ``.raw`` files. Each file becomes a bundle directory
 (``manifest.json`` + ``peaks.parquet`` + ``scan_metadata.parquet`` +
 ``acquisition_metadata.parquet``); per-scan ``filter_string`` is recorded so
@@ -131,7 +131,7 @@ def main(argv: "list[str] | None" = None) -> int:
     if not args.dry_run:
         # CLR pre-flight in the parent (pure file check; convert_batch loads the
         # CLR only inside spawn workers — never fork a CLR-initialised parent).
-        from constellation.massspec.io.thermo import require_thermo
+        from constellation.massspec.readers.thermo import require_thermo
 
         try:
             require_thermo()

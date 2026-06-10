@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from constellation.massspec.io.thermo import BatchResult
+from constellation.massspec.readers.thermo import BatchResult
 
 from protostar.convert import driver
 

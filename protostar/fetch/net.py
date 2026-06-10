@@ -8,7 +8,7 @@ we add streamed digests and a Range-resumable downloader here.
 
 Download integrity (the PRIDE SHA-1 / Zenodo MD5 checked here) is a separate
 concern from conversion provenance (the SHA-256 that
-``constellation.massspec.io.thermo.convert`` records in each bundle manifest);
+``constellation.massspec.readers.thermo.convert`` records in each bundle manifest);
 the two are never cross-compared.
 """
 
