@@ -104,7 +104,7 @@ robustness, on within-peptide (replicate) vs between-peptide pairs.
 - *Data:* identify PROCAL scans from the paired MaxQuant searches (#11), guided/filtered by the
   MSP reference (`massspec.io.msp`); aggregate replicates → consensus (#13); score every pair
   under each metric (#12). *Extend* to single-pool peptides via the same #11 identifications.
-- *Inputs:* `proc/{dataset}/centroid` bundles; `libraries/{mode}/*.msp`; paired MaxQuant searches.
+- *Inputs:* `proc/{dataset}/<stem>/` (bundle v3, via `protostar.bundles`); `libraries/{mode}/*.msp`; paired MaxQuant searches.
 - *Outputs:* per-pair metric table (parquet) + figures (metric distributions; KL-vs-cosine
   scatter; an illustrative modestly-abundant-ion deviation case).
 - *Gates:* **#11, #12, #13, #3 (MS2 retrieval).** Not gated on Counter.
