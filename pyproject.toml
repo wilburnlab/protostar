@@ -26,7 +26,10 @@ osc = ["osc_helper"]
 # peptide-reference parquet (pipelines/05_peptide_reference.py). Reading the
 # committed parquet at runtime needs nothing beyond the core deps.
 peptides = ["openpyxl"]
-dev = ["pytest", "ruff", "openpyxl"]
+# Figure rendering for experiment drivers (pipelines/experiments/*) and their
+# plotting helpers under protostar.experiments. Not in constellation-bio[ms].
+viz = ["matplotlib"]
+dev = ["pytest", "ruff", "openpyxl", "matplotlib"]
 
 [tool.setuptools.packages.find]
 include = ["protostar*"]
