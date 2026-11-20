@@ -1,5 +1,25 @@
 # MS1 Ion Model — Technical Specification
 
+> **Provenance banner (added 2026-11-20). This is a historical document; it is not current.**
+>
+> It was copied from MS_Quant (`ProteomeTools/docs/model_specification.md`, 2026-04-09) when
+> protostar was scaffolded, and its body has been kept as-is for the record. **For the current status
+> of each feature, see [`counter_model_decisions.md`](counter_model_decisions.md).**
+>
+> Known stale or incorrect content:
+> - **α_mz ≈ 0.93 and ν_mz ≈ 3.06** are pre-IIT values (nb38 / nb40a). The converged nb42b fit is
+>   **α_mz = 0.604 and ν_mz = 7.77** (decision log D4c).
+> - **The per-scan μ̂(t) "across all isotopes in scan t"** is not what the model code computed. The code
+>   took a per-(peptide, scan, charge) mean over that peptide's ≤3 isotopes, on raw errors. How the
+>   offset should be defined is under test (D4b).
+> - The "required" sliding-window and KL features are detection heuristics, not likelihood terms
+>   (D6, D7).
+> - The §7 binary `InterferenceMixture` is mis-specified rather than refuted. Interference is under
+>   test (D9).
+> - Function and file names (`extract_ms1_chromatogram()`, `*.scanmeta`,
+>   `expected_isotope_envelope()`) refer to Cartographer and MS_Quant and no longer exist.
+> - Evidence scope: the nb41/nb42 fits are a **single file**.
+
 A statistical model for quantifying peptide ion counts from Orbitrap MS1 data,
 developed through notebooks nb13–nb42b on the ProteomeTools synthetic peptide dataset.
 
