@@ -68,6 +68,12 @@ def legacy_dir(data_root: str | Path, dataset: str, mode: str = "centroid") -> P
     return proc_dir(data_root, dataset) / mode
 
 
+def profile_sibling(bundle_dir: str | Path) -> Path:
+    """The ``<stem>.profile`` bundle written beside the centroid bundle ``<stem>``."""
+    d = Path(bundle_dir)
+    return d.with_name(d.name + PROFILE_SUFFIX)
+
+
 def bundle_state(bundle_dir: str | Path) -> BundleState:
     """Classify a bundle directory.
 
@@ -145,7 +151,7 @@ def inventory(data_root: str | Path, dataset: str) -> Inventory:
         state = bundle_state(child)
         if state == "current":
             inv.current.append(child.name)
-            if bundle_state(child.with_name(child.name + PROFILE_SUFFIX)) == "current":
+            if bundle_state(profile_sibling(child)) == "current":
                 inv.with_profile.append(child.name)
         elif state == "outdated":
             inv.outdated.append(child.name)
@@ -230,6 +236,7 @@ __all__ = [
     "iter_run_bundles",
     "legacy_dir",
     "proc_dir",
+    "profile_sibling",
     "read_scan_metadata",
     "require_run_bundle",
     "run_bundle_dir",

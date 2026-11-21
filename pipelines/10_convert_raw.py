@@ -65,7 +65,8 @@ def _convert_dataset(args: argparse.Namespace, config: dict, dataset: str) -> in
         print(
             f"  {dataset}: {len(raws)} raw, {len(planned)} in plan → "
             f"{len(plan.current)} current (skip), {len(plan.pending)} pending, "
-            f"{len(plan.outdated)} outdated (re-convert); {n_todo} to convert"
+            f"{len(plan.outdated)} outdated + {len(plan.interrupted)} interrupted "
+            f"(cleared and re-converted); {n_todo} to convert"
         )
         return 0
 

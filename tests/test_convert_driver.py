@@ -47,11 +47,15 @@ def _layout(tmp_path):
     out = driver.bundle_out_parent(tmp_path, DS)
     write_run_bundle(out, "done", [ms1_scan(1, 1.0, [500.0], [1.0])])
     write_legacy_bundle(out, "stale")  # pre-v3 manifest at the v3 location
-    (out / "partial").mkdir()
+    (out / "partial").mkdir()  # empty: Constellation accepts it without force
     # a June-layout bundle of "todo" must NOT count as converted
     write_legacy_bundle(bundles.legacy_dir(tmp_path, DS, "centroid"), "todo")
-    paths = [Path(f"{s}.raw") for s in ("done", "stale", "partial", "todo")]
-    return out, paths
+    # killed mid-run: peak parts with no manifest; profile parts with no peak bundle yet
+    for leftover in ("killed/peaks", "orphan.profile/profile"):
+        (out / leftover).mkdir(parents=True)
+        (out / leftover / "part-00000.parquet").write_bytes(b"")
+    stems = ("done", "stale", "partial", "todo", "killed", "orphan")
+    return out, [Path(f"{s}.raw") for s in stems]
 
 
 def test_classify_routes_by_v3_state(tmp_path):
@@ -60,10 +64,17 @@ def test_classify_routes_by_v3_state(tmp_path):
     assert [p.stem for p in plan.current] == ["done"]
     assert [p.stem for p in plan.outdated] == ["stale"]
     assert sorted(p.stem for p in plan.pending) == ["partial", "todo"]
-    assert sorted(p.stem for p in plan.to_convert) == ["partial", "stale", "todo"]
+    assert sorted(p.stem for p in plan.interrupted) == ["killed", "orphan"]
+    assert sorted(p.stem for p in plan.to_convert) == [
+        "killed",
+        "orphan",
+        "partial",
+        "stale",
+        "todo",
+    ]
 
 
-def test_run_conversion_forces_only_outdated(tmp_path, monkeypatch):
+def test_run_conversion_forces_outdated_and_interrupted(tmp_path, monkeypatch):
     out, paths = _layout(tmp_path)
     calls = []
 
@@ -73,10 +84,12 @@ def test_run_conversion_forces_only_outdated(tmp_path, monkeypatch):
 
     monkeypatch.setattr(driver, "convert_batch", fake_convert_batch)
     results = driver.run_conversion(paths, out, n_workers=4, precursor_major=False)
-    assert len(results) == 4
+    assert len(results) == 6
     by_force = {kw["force"]: stems for stems, kw in calls}
     assert sorted(by_force[False]) == ["done", "partial", "todo"]  # Constellation skips "done"
-    assert by_force[True] == ["stale"]  # never reported "already converted"
+    # "stale" is never reported "already converted"; "killed"/"orphan" would hit
+    # Constellation's non-empty-directory refusal without force
+    assert sorted(by_force[True]) == ["killed", "orphan", "stale"]
     for _, kw in calls:
         assert kw["keep_profile"] is True and kw["precursor_major"] is False
         assert kw["n_workers"] == 4 and "profile" not in kw
