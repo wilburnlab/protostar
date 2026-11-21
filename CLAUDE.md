@@ -39,12 +39,13 @@ entry and **never** ship inside a `results/` record.
 | Capability | Home |
 |---|---|
 | Thermo `.raw` → parquet-bundle reader/writer (`convert`/`convert_batch`), scanmeta/IIT access | `constellation` (`massspec.readers.thermo`) |
-| MS1/MS2 chromatogram extraction + windowed scoring | `constellation.massspec` |
+| Bundle access (v3: `read_bundle_manifest`, `peaks_dataset`, `points_dataset`, `is_profile_bundle`) | `constellation.massspec.bundle` |
+| MS1/MS2 chromatogram extraction (sweep `extract_xic`, `extract_xic_scan_major`) + scoring | `constellation.massspec.quant` / `massspec.sweep` |
 | Peak shapes (`HyperEMGPeak`, …) | `constellation.core.stats.peaks` |
 | Optimizers (`DifferentialEvolution`, `LBFGSOptimizer`) | `constellation.core.optim` |
-| Counter modules (`GlobalCalibration`, `Mass`, `Panel`, `PanelSet`, scoring, additive-progenitor NLL) | `constellation.massspec` |
-| Laplace credible intervals, identification Λ | `constellation.massspec` |
-| EncyclopeDIA/Scribe search wrapper | `constellation.thirdparty` / `massspec.io` |
+| Counter modules (`GlobalCalibration`, `Progenitor`, `Panel`, discovery/components/attribution, `estimate_n`) | `constellation.massspec.counter` |
+| Credible intervals, identification Λ | `constellation.massspec.counter` |
+| EncyclopeDIA/ScribeTwo search, MSP/MaxQuant readers | `constellation.massspec.search` / `massspec.io` + `constellation.thirdparty` |
 | ProteomeTools fetch/verify, accessions, injection structure | **protostar** |
 | Acquisition time-table curation | **protostar** (persists a `massspec.acquisitions.Acquisitions` table) |
 | Experiment scripts + curated `results/` records | **protostar** |
@@ -74,8 +75,11 @@ protostar/
 ├── results/                  # the "textbook": curated MD records + figures + small tables
 │   ├── 0X_*.md  +  figures/  # committed. Bulk parquet artifacts are gitignored / on ESS.
 ├── notebooks/                # scratch/exploration sandbox — NOT source of record
-├── docs/                     # model_specification.md (empirical values); the ledger:
-│   └── constellation_contributions.md
+├── docs/                     # records + specs:
+│   ├── counter_model_decisions.md       # WHY each Counter feature is in/out (the decision log)
+│   ├── history.md                       # dated history across MS_Quant/Cartographer/Constellation/protostar
+│   ├── constellation_contributions.md   # the ledger (needed / landed upstream capabilities)
+│   └── model_specification.md           # historical MS_Quant spec (stale values — see its banner)
 └── data/                     # small local dev subsets only (gitignored); canonical on ESS
 ```
 
@@ -136,45 +140,37 @@ analysis (which keyed off mzML files and FragPipe searches) — none of that car
 
 ---
 
-## Canonical MS1 ion model — required components (guardrail)
+## Counter model — the decision log
 
-Any experiment that fits N(t) or scores MS1 observations **must** include all of the
-following. These were established across the prior analysis (nb13–nb42b) and validated
-extensively. Do not simplify, omit, or approximate — partial models produce misleading
-results. The implementations live in Constellation; this checklist is the acceptance gate for
-any experiment here.
+**The status of every Counter model feature lives in
+[`docs/counter_model_decisions.md`](docs/counter_model_decisions.md)**: what is Adopted, Under test,
+Heuristic or Open, with the evidence and its scope. Read it before fitting N(t) or scoring MS1
+observations. Change a feature's status only by adding evidence and a dated History line there. Never
+edit model values into this file.
 
-1. **Charge-dependent α(z):** `α(z) = softplus(α₀ + α₁·z)`, linear in z (charge-only, no IIT
-   power-law). **Fit per file.** Intensity is per-time; ion count `N = I·iit/α(z)`. Reference:
-   DDA 60K `α(z=2) ≈ 19–22` (MLE); targeted 120K `α₀ ≈ −6, α₁ ≈ 16.9`.
-2. **IIT in the variance (not on α):** `Var[I_k] ∝ α/iit`. The missing `/iit` caused 10–100×
-   α inflation (the nb42a bug). IIT from scanmeta (`*.scanmeta`, level-1 `iit` ms).
-3. **Fitted isotope fractions p_k (not theoretical):** `expected_isotope_envelope()` has a
-   systematic mass-dependent bias (dp_0 ≈ +0.0075, dp_2 ≈ −0.0064). Use per-peptide fitted
-   fractions; renormalize to sum 1.
-4. **m/z error decomposition:** (a) per-file isotope-spacing correction
-   `da_err_k − k·d_mz_k/charge`; (b) per-scan systematic offset `μ̂(t)` = mean residual across
-   ions in the scan (calibration drift, ~0.47 ppm between-scan σ — NOT interference);
-   (c) per-ion residual `ε_k = mz_err_corr − μ̂(t)`, the interference-sensitive quantity,
-   `ε_k ~ t_ν_mz(0, √(c_mz/N_k^α_mz))` with c_mz per-peptide, α_mz ≈ 0.93, ν_mz ≈ 3.06.
-5. **Per-ion intensity model (Student-t):** `I_pred = N(t)·p_k·α(z)`;
-   `Var[I_k] = α(z)·ΣI_pred·p_k·(1−p_k)/iit`; `I_obs ~ t_ν_I(I_pred, √Var)` with ν_I
-   **per-peptide** (median ~6.5 at 60K DDA; resolution-scales as (R/R_ref)^η, η≈0.87).
-6. **Sliding-window contextual features** (W=15 leave-one-out): `μ_smooth`, `μ_sd`,
-   `kl_smooth`.
-7. **KL divergence with intensity-weighted charge aggregation** against fitted fractions;
-   missing isotopes filled with pseudocount; sigmoid + charge weights.
+This replaces the "canonical MS1 ion model — required components" checklist, which was removed on
+2026-11-20. That checklist was copied at the scaffold from an April MS_Quant agent guardrail. Its m/z
+values pre-date the IIT fix, its μ̂ description did not match the model code, and two of its seven
+"required" items were detection heuristics. See [`docs/history.md`](docs/history.md).
 
-**Optimizer rule:** for any `nn.Module` fit, use Constellation's
-`core.optim.DifferentialEvolution` — **never** `scipy.optimize.differential_evolution` (the
-nb42c lesson: scipy-DE produced optimizer artifacts mistaken for structural findings).
+Hard rules, independent of the log's open questions:
 
-**Counter / interference:** the current direction is the **additive-progenitor** joint
-likelihood (interference as a sum of co-contributing progenitors, not a binary signal/noise
-mixture; zero observations as proper Poisson log-probabilities; overlapping center-weighted
-2D m/z×RT panels). The math is in `docs/` (and Constellation's
-`docs/plans/cartographer-counter-port.md`). **nb42c is quarantined** — wrong DE, improper
-censored scaling, binary-mixture mis-specification; do not resurrect it.
+- **IIT goes in the variance, not on α.** Ion count is `N = I·iit/α(z)` (D2).
+- **α(z) is fit per file.** Do not borrow gain values across files without a test (D1).
+- **Optimizer:** use Constellation's `core.optim.DifferentialEvolution`, plus LBFGS polish. **Never**
+  use `scipy.optimize.differential_evolution`; in nb42c it produced artifacts that were mistaken for
+  findings (D16).
+- **nb42c is quarantined.** It used the wrong DE, an improper censored scaling and a mis-specified
+  binary mixture. Do not resurrect it.
+- **No partial models presented as results.** If an experiment omits an Adopted feature, it says so in
+  its `results/` record and is labelled as a component study, not a model fit.
+- **Evidence scope is stated.** The reference fit (nb42b) is one file. Single-file numbers are labelled
+  as such.
+
+**Interference** is **Under test** (D9). Two framings compete: additive progenitors (built in
+Constellation, never run on PT data) and a per-point binary interfered/clean state (the PI's preferred
+framing for PT reprocessing). Neither is the default until Test D. The MS_Quant notebooks are archived
+read-only in `wilburnlab/ms_quant_archive`; cite them, do not extend them.
 
 ---
 
@@ -218,38 +214,48 @@ censored scaling, binary-mixture mis-specification; do not resurrect it.
 
 ## Status
 
-**Data layer complete and executed on OSC (Cardinal).** The full corpus is fetched and
-converted on project ESS:
+*Rewritten 2026-11-20 at the project restart. See [`docs/history.md`](docs/history.md) for the dated
+record.*
 
-- **`00_fetch_raw`** — all **4,213 `.raw`** seeded from the Cartographer tree (`--seed-mode move`)
-  + all **SEARCH** (MaxQuant `txt` zips, 1460/888/1865) downloaded from PRIDE.
-- **`10_convert_raw`** — **4,212 / 4,213** bundles in **both** centroid + profile (16-worker
-  exclusive-node SLURM arrays). The single miss is a documented **corrupt PRIDE source**
-  (Wilhelm2021 `…pool_122…3xHCD-1hnoincl-R1.raw`, a 57,874-byte aborted acquisition, byte-identical
-  on re-download — see `docs/osc_runbook.md` "Known-skip"); no data lost (its R2 + other injections
-  converted). A dry-run therefore permanently shows "1 to convert" for Wilhelm2021 — expected.
-- **`15_reference_library`** — all 8 published `.msp` modes fetched + extracted to `libraries/`.
-- **`20_build_metadata`** — acquisition time-table built + validated for all three datasets
-  (`proc/<dataset>/acquisitions.parquet`; per-instrument 1-based chronological `acquisition_order`,
-  contiguous + datetime-monotonic, verified on the real corpus).
+**The data layer was completed in June 2026, but on a bundle format current Constellation refuses.**
 
-**Constellation contributions landed this phase** (`docs/constellation_contributions.md`): #1/#2
-Thermo reader + bundle (production-ready); the Thermo **`ToolSpec` registration** fix (adapter was
-missing from `thirdparty/__init__`'s eager-import list → DLL discovery returned `None`); **#11**
-the **`massspec.io.maxquant`** reader (`msms.txt` → `Search.psms` / new `PSM_TABLE`, ProForma
-modseqs, `(raw_file, scan)` join-back to `scan_metadata` cross-checked by analyzer/fragmentation);
-`scan_metadata` **`analyzer` + `activation_type`** columns (HCD35 vs CID35 are indistinguishable by
-energy alone, so per-scan mode is a column filter, not a `filter_string` re-parse); and the
-**`Acquisitions`** widening (`instrument_serial`/`instrument_model`/`acquisition_order` +
-`with_acquisition_order()`, which orders by a parsed UTC instant, not the raw datetime string).
+- `00_fetch_raw`: all **4,213 `.raw`** files (seeded from the Cartographer tree) and all MaxQuant
+  SEARCH zips (1460/888/1865) are on ESS.
+- `10_convert_raw`: **4,212 / 4,213** were converted in June, centroid and profile as two passes. The
+  one miss is a documented corrupt PRIDE source (Wilhelm2021 `…pool_122…3xHCD-1hnoincl-R1.raw`,
+  57,874 bytes; `docs/osc_runbook.md` "Known-skip").
+- **These bundles predate Constellation bundle v3** (#104, 2026-10-31). Any Constellation API given
+  one raises `OutdatedBundleError`, and there is no upgrader. **The corpus must be reconverted**,
+  after the convert driver is migrated to `convert_batch(keep_profile=…)`. The plan is a ~6-file pilot
+  to size it, then full reconversion; v1 bundles are deleted per dataset only after v3 verifies and
+  the PI confirms.
+- `15_reference_library` (all 8 `.msp` modes) and `20_build_metadata` (acquisition time table) were
+  done in June. Stage 20 must be re-run on v3 bundles.
 
-**Operational facts established** (in `docs/osc_runbook.md`): the libstdc++ `LD_LIBRARY_PATH` pin;
-convert is **ESS-I/O-bound** → **16 workers / exclusive node** (≥32 risks CLR-spawn flakiness);
-profile expands MS1 only (all MS2 centroided at acquisition). ETD is converted + kept (MS1 +
-EThcD/ETciD MS2) though outside the 9 modeled HCD/CID modes.
+**Counter: the port exists but has not been validated.** Constellation `massspec.counter` (#69–#86,
+June) was validated on synthetic data plus one 10-PROCAL real-data smoke (2026-06-11). The original
+notebook model (nb42b) is itself a single-file fit. The two differ, most importantly in the intensity
+likelihood: Constellation is Poisson-only, while the PI adopted Student-t on 2026-11-20 (decision log
+D5). The upstream fixes and features are specified as change requests (CR-*) in Constellation's
+`docs/plans/counter-pt-reconciliation.md`, for a separate Constellation session to implement.
 
-**Next:** `30_extract_intermediates` (MS1/MS2 chromatograms for PROCAL + library peptides) — gated
-on **ledger #3** (chromatogram extraction) landing in Constellation, so it is a build-upstream-first
-effort, not self-contained like stage 20. The MaxQuant identifications (#11) now unblock the
-search↔raw association the experiments build on; the Counter modules (#4–#9) follow as those
-experiments need them.
+**Stage 30 and the Counter-motivation figures were built but not run at scale.**
+`30_extract_intermediates` (`protostar/intermediates/ms1_extract.py`) extracts per-(peptide, charge,
+scan) MS1 isotope chromatograms for PROCAL and known-clear peptides. Only shard 0 of 16 was run
+(06-03). The four empirical figure scripts (`pipelines/experiments/10–14`) therefore rest on 1/16 of
+the data. The α̂(z) moment estimate (script 11) is confounded and is not to be published.
+
+**Next** (restart plan):
+1. Prep PR (CI pin, PSM_TABLE v2 fixture).
+2. History and decision-log docs.
+3. Pipeline migration to bundle v3 (`protostar/bundles.py`; convert, metadata and stage 30 on the
+   bundle API).
+4. Constellation change requests, handed off as a Constellation plan (not tracked here).
+5. OSC pilot, reconversion and the full stage-30 run.
+6. Land the June backlog.
+7. Tests A–E (intensity likelihood, m/z offset level, space charge, binary interference state, MS1→MS2
+   conversion).
+
+Operational facts (in `docs/osc_runbook.md`): the libstdc++ `LD_LIBRARY_PATH` pin; convert is
+**ESS-I/O-bound**, so use 16 workers on an exclusive node (32 or more risks CLR-spawn flakiness); all
+MS2 is centroided at acquisition, so profile data covers MS1 only; ETD is converted and kept.
