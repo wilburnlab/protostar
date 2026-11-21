@@ -51,44 +51,58 @@ python pipelines/00_fetch_raw.py --dataset all --dry-run --verify      # integri
 python pipelines/15_reference_library.py --modes all --extract         # ~2.3 GB -> data/libraries/<mode>/
 ```
 
-## 5. Convert to parquet (stage 10 — needs a compute node for the Thermo DLLs)
+## 5. Convert to parquet (stage 10, bundle v3; needs a compute node for the Thermo DLLs)
+
+Constellation ≥ 2026-10-31 writes **bundle v3** in **one pass**: `proc/<dataset>/<stem>/` (the
+centroid peaks, `peaks/part-*.parquet`, plus scan and acquisition metadata) and a sibling
+`proc/<dataset>/<stem>.profile/` (MS1 profile points). Pre-v3 bundles, i.e. the June 2026 corpus in
+`proc/<dataset>/{centroid,profile}/<stem>/`, raise `OutdatedBundleError` in Constellation.
+
+Stage 10 never writes into the old trees and never deletes them. `--dry-run` reports them as
+"legacy". Delete a dataset's legacy trees only after its v3 conversion verifies (step 6), and only
+with the PI's go-ahead.
+
 ```bash
-# 5a. Smoke-test one file:
-salloc -A <allocation> -p cardinal -N 1 -n 1 -c 8 -t 1:00:00
+# 5a. Pilot (sizes + fidelity). Pick ~6 files: each dataset × injection type, including the
+#     nb42b reference file 01625b_GA1-TUM_first_pool_1_01_01-DDA-1h-R2. Run each with and
+#     without the precursor-major copy, and record disk use + wall time.
+salloc -A <allocation> -p cardinal -N 1 -n 1 -c 16 -t 2:00:00
 conda activate constellation
 export LD_LIBRARY_PATH="$CONDA_PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 cd ~/protostar
-python pipelines/10_convert_raw.py --dataset Zolg2017 --limit 1
-
-# 5b. Validate profile on 1-2 files (gating step):
-python pipelines/10_convert_raw.py --dataset Zolg2017 --limit 2 --profile
-#   confirm proc/Zolg2017/profile/<stem>/ exists, more peak rows/scan than centroid,
-#   peak_resolution/noise/baseline null. If wrong -> STOP.
+python pipelines/10_convert_raw.py --dataset Zolg2017 --raw-name <stem> --no-precursor-major
+du -sh <data_root>/proc/Zolg2017/<stem> <data_root>/proc/Zolg2017/<stem>.profile
+#   Also check: MS1 peaks agree with the June centroid bundle of the same file (scan count,
+#   peaks per scan, intensity, and peak_resolution/noise/baseline still populated). The v3
+#   default centroider is Thermo's Scan.ToCentroid. If they disagree -> STOP and report.
+#   Also convert the known-corrupt Wilhelm2021 file (below): expect status=error
+#   ("holds no mass-spectrometer data"), not a .NET stack trace.
 exit   # leave salloc
 
-# 5c. Full centroid pass (one SLURM job/dataset; convert.sbatch sets LD_LIBRARY_PATH itself):
+# 5b. Full pass (one SLURM job per dataset; convert.sbatch sets LD_LIBRARY_PATH itself).
+#     Pass EXTRA_ARGS=--no-precursor-major if the pilot says so.
 for DS in Zolg2017 Gessulat2019 Wilhelm2021; do
   sbatch --account=<allocation> --export=ALL,PROTOSTAR_DIR=$HOME/protostar,DATASET=$DS \
     pipelines/slurm/convert.sbatch
 done
 squeue --me
 
-# 5d. Full profile pass (only after 5b checks out):
-for DS in Zolg2017 Gessulat2019 Wilhelm2021; do
-  sbatch --account=<allocation> --export=ALL,PROTOSTAR_DIR=$HOME/protostar,DATASET=$DS,MODE_FLAG=--profile \
-    pipelines/slurm/convert.sbatch
-done
+# 5c. Acquisition tables: rebuild from v3. A June table is not "present" (it lacks the
+#     bundle-schema stamp), so no --force is needed.
+python pipelines/20_build_metadata.py --dataset all
 ```
 
 ## 6. Reconcile
 ```bash
-python pipelines/00_fetch_raw.py  --dataset all --dry-run             # fetch completeness
-python pipelines/10_convert_raw.py --dataset all --dry-run           # centroid converted vs planned
-python pipelines/10_convert_raw.py --dataset all --dry-run --profile # profile
+python pipelines/00_fetch_raw.py  --dataset all --dry-run    # fetch completeness
+python pipelines/10_convert_raw.py --dataset all --dry-run   # v3 current / outdated / pending + legacy
+python pipelines/20_build_metadata.py --dataset all --dry-run
 ```
-Expect raw counts ~ 1460 / 888 / 1865 (Zolg / Gessulat / Wilhelm); converted == present per mode,
-**except one known-bad source file** (see below): Wilhelm2021 converts 1864 / 1865, so its dry-run
-permanently shows "1 to convert". That is expected, not a failure.
+Expect:
+- Raw counts of about 1460 / 888 / 1865 (Zolg / Gessulat / Wilhelm), and v3 current == raw present.
+- The **one known-bad source file** below is the exception. Wilhelm2021 converts 1864 / 1865, so
+  its dry-run permanently shows "1 pending". That is expected, not a failure.
+- The acquisition counts should match the June tables.
 
 ## Known-skip: one corrupt PRIDE source file (Wilhelm2021)
 
@@ -102,14 +116,18 @@ Verified faithful to the source (2026-05-31): a fresh re-download is byte-identi
 (`sha256 083d9238…`), and PRIDE's live `Content-Length` is 57,874 — so this is a corrupt file at
 the **source archive**, not a truncated download. Wilhelm2021 publishes no checksums, so the fetch
 size-check (57,874 == expected) passes and the stub is retained. Do not chase the perpetual
-"1 to convert"; re-fetching reproduces the identical stub. (Constellation hardening to skip such
-empty `.raw` gracefully instead of raising is tracked in `constellation_contributions.md`.)
+"1 pending"; re-fetching reproduces the identical stub. Since Constellation beedabb (2026-10-26)
+the reader checks for an MS device before selecting it, so this file should now come back as a
+per-file `status=error` ("holds no mass-spectrometer data") rather than a .NET stack trace. Confirm
+this in the reconversion pilot (ledger #15).
 
 ## Notes
 - Idempotent throughout — re-running after an interruption is the recovery path.
 - `convert.sbatch` leaves `#SBATCH --account` commented; pass `--account=<allocation>` on submit
   (or uncomment it). For very large datasets, fan out: `--array=0-19 ... ,N_SHARDS=20`.
 - Everything keys off the `.raw` files; `proc/` bundles are rebuilt from scratch (no cache reuse).
+- Read bundles only through `protostar.bundles` (it knows the v3 layout and refuses pre-v3 bundles);
+  never open `peaks.parquet` or glob `*/manifest.json` directly.
 
 ## Troubleshooting
 - **`CXXABI_1.3.15 not found` on import** — the env's libstdc++ is being shadowed by the

@@ -64,6 +64,7 @@ protostar/
 │   ├── datasets.toml         # per-dataset accessions, .raw lists+checksums, .msp URLs
 │   └── osc.toml              # ESS/home paths, account
 ├── protostar/                # slim glue package over constellation — NO model code
+│   ├── bundles.py            # the ONLY way to locate/read proc/ bundles (v3 layout, refuses pre-v3)
 │   ├── fetch/ convert/ library/ metadata/ intermediates/ experiments/
 ├── pipelines/                # CLI entry points + OSC/SLURM wrappers (one stage per file)
 │   ├── 00_fetch_raw.py            # fresh download + hash verify; --seed-from optional
@@ -118,12 +119,16 @@ analysis (which keyed off mzML files and FragPipe searches) — none of that car
   `hardlink`/`copy` available.
 - **Canonical data root:** `<data_root>/` (set via `--data-root`, `$PROTOSTAR_DATA_ROOT`, or
   `config/osc.toml` — the lab points it at project ESS storage) with `raw/{dataset}/`,
-  `search/{dataset}/`, `proc/{dataset}/{centroid,profile}/<stem>/`, `libraries/<mode>/`. The
-  `proc/` parquet bundles are **rebuilt from scratch** with the latest Constellation reader
-  (no reuse of prior caches) for downstream consistency. Only MS1 survey scans are recorded in
-  **profile** mode; **all MS2 (Orbitrap, ion-trap, ETD) are centroided at acquisition**
-  (Zolg et al. 2017), so the `profile` pass expands MS1 only — IT MS2 peak rows are
-  byte-identical between the centroid and profile bundles.
+  `search/{dataset}/`, `proc/{dataset}/<stem>/` + `proc/{dataset}/<stem>.profile/` (Constellation
+  **bundle v3**, written in one pass), and `libraries/<mode>/`.
+  - The `proc/` bundles are **rebuilt from scratch** with the latest Constellation reader (no reuse
+    of prior caches) for downstream consistency.
+  - **Read them only through `protostar.bundles`.** It knows the v3 layout and refuses pre-v3
+    bundles. Never open `peaks.parquet` or glob `*/manifest.json` directly.
+  - The June 2026 pre-v3 trees `proc/{dataset}/{centroid,profile}/` are legacy and are deleted per
+    dataset once v3 verifies.
+  - Only MS1 survey scans are recorded in **profile** mode. **All MS2 (Orbitrap, ion-trap, ETD) are
+    centroided at acquisition** (Zolg et al. 2017), so the `.profile` bundle carries MS1 only.
 - **Fragmentation mode is a per-scan property** derived from the scan filter string /
   scanmeta — not from pre-split files. Each pool was acquired as **4 injections** (`.raw`
   files): `DDA`, `2xIT_2xHCD`, `3xHCD`, `ETD` (Wilhelm2021 omits ETD for 60 pools). The 9

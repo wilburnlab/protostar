@@ -1,25 +1,27 @@
 #!/usr/bin/env python
-"""Stage 10 — convert ``.raw`` into Constellation parquet bundles (``proc/``).
+"""Stage 10 — convert ``.raw`` into Constellation parquet bundles (``proc/``), bundle v3.
 
 Drives ``constellation.massspec.readers.thermo.convert_batch`` over a dataset's
-``.raw`` files. Each file becomes a bundle directory
-(``manifest.json`` + ``peaks.parquet`` + ``scan_metadata.parquet`` +
-``acquisition_metadata.parquet``); per-scan ``filter_string`` is recorded so
-fragmentation mode is recoverable downstream without pre-splitting. Resume is
-free — bundles whose ``manifest.json`` already exists are skipped.
+``.raw`` files. Each file becomes, in **one pass**, a centroid bundle plus a
+sibling profile bundle::
 
-Centroid (default) and profile bundles live side by side::
+    <data_root>/proc/<dataset>/<stem>/            # peaks/part-*.parquet + scan/acq metadata
+    <data_root>/proc/<dataset>/<stem>.profile/    # MS1 profile points (--no-profile to omit)
 
-    <data_root>/proc/<dataset>/<centroid|profile>/<stem>/...
+Per-scan ``filter_string`` is recorded, so fragmentation mode is recoverable
+downstream without pre-splitting files.
 
-Renamed from the scaffold's ``10_build_mzpeak.py`` — the output is just
-Constellation's convert bundle (no "mzpeak"/HUPO-PSI standard exists).
+Resume is free: a current (v3) bundle is skipped. A pre-v3 bundle at the v3
+location is re-converted rather than skipped. The June 2026 pre-v3 trees
+(``proc/<dataset>/{centroid,profile}/``) are left untouched; ``--dry-run``
+reports them.
 
 Usage::
 
-    python pipelines/10_convert_raw.py --dataset Zolg2017 --limit 1     # smoke test
-    python pipelines/10_convert_raw.py --dataset Zolg2017 --limit 2 --profile  # validate profile
-    python pipelines/10_convert_raw.py --dataset all --workers 40       # full centroid pass
+    python pipelines/10_convert_raw.py --dataset Zolg2017 --dry-run      # inventory + plan
+    python pipelines/10_convert_raw.py --dataset Zolg2017 --limit 1      # smoke test
+    python pipelines/10_convert_raw.py --dataset all --workers 16        # full pass
+    python pipelines/10_convert_raw.py --raw-name <stem> --dataset Zolg2017   # one named file
 """
 
 from __future__ import annotations
@@ -35,37 +37,50 @@ from _common import (
     resolve_datasets,
 )
 
+from protostar import bundles
 from protostar.convert import driver
 
 
 def _convert_dataset(args: argparse.Namespace, config: dict, dataset: str) -> int:
     droot = data_root(config, args.data_root)
-    mode = driver.mode_name(args.profile)
 
     raws = driver.enumerate_raw(droot, dataset)
+    if args.raw_name:
+        wanted = set(args.raw_name)
+        raws = [p for p in raws if p.stem in wanted or p.name in wanted]
     if not raws:
-        print(f"  {dataset}: no .raw files under {driver.raw_dir(droot, dataset)} — fetch first")
+        print(f"  {dataset}: no matching .raw under {driver.raw_dir(droot, dataset)}")
         return 0
 
     planned = driver.plan_conversion(
         raws, shard=args.shard, n_shards=args.n_shards, limit=args.limit
     )
-    out_parent = driver.bundle_out_parent(droot, dataset, profile=args.profile)
-    already = driver.converted_stems(droot, dataset, profile=args.profile)
-    todo = [p for p in planned if args.force or p.stem not in already]
+    out_parent = driver.bundle_out_parent(droot, dataset)
+    plan = driver.classify(planned, out_parent)
+    n_todo = len(planned) if args.force else len(plan.to_convert)
 
     if args.dry_run:
+        inv = bundles.inventory(droot, dataset)
+        print(f"  {dataset}: {inv.summary()}")
         print(
-            f"  {dataset} [{mode}]: {len(raws)} raw, {len(planned)} in plan, "
-            f"{len(already)} already converted, {len(todo)} to convert"
+            f"  {dataset}: {len(raws)} raw, {len(planned)} in plan → "
+            f"{len(plan.current)} current (skip), {len(plan.pending)} pending, "
+            f"{len(plan.outdated)} outdated (re-convert); {n_todo} to convert"
         )
         return 0
 
-    print(f"  {dataset} [{mode}]: converting {len(todo)} of {len(planned)} planned → {out_parent}")
+    print(
+        f"  {dataset}: converting {n_todo} of {len(planned)} planned → {out_parent} "
+        f"(keep_profile={args.keep_profile}, centroid_algo={args.centroid_algo}, "
+        f"precursor_major={args.precursor_major})",
+        flush=True,
+    )
     results = driver.run_conversion(
         planned,
         out_parent,
-        profile=args.profile,
+        keep_profile=args.keep_profile,
+        centroid_algo=args.centroid_algo,
+        precursor_major=args.precursor_major,
         n_workers=args.workers,
         force=args.force,
         rt_bin_width_s=args.rt_bin_width_s,
@@ -73,10 +88,7 @@ def _convert_dataset(args: argparse.Namespace, config: dict, dataset: str) -> in
         progress_cb=make_progress(args.quiet),
     )
     summary = driver.summarize_results(results)
-    print(
-        f"  {dataset} [{mode}]: {summary.n_ok} ok, {summary.n_skipped} skipped, "
-        f"{summary.n_error} failed"
-    )
+    print(f"  {dataset}: {summary.n_ok} ok, {summary.n_skipped} skipped, {summary.n_error} failed")
     for name, detail in summary.errors:
         print(f"    ERROR {name}: {detail}")
     return 1 if summary.n_error else 0
@@ -89,7 +101,21 @@ def build_parser() -> argparse.ArgumentParser:
     add_common_args(p)
     add_dataset_arg(p)
     p.add_argument(
-        "--profile", action="store_true", help="profile mode (raw FT grid); default is centroid"
+        "--no-profile",
+        dest="keep_profile",
+        action="store_false",
+        help="do not write the sibling <stem>.profile/ bundle (default: write it)",
+    )
+    p.add_argument(
+        "--centroid-algo",
+        default=driver.DEFAULT_CENTROID_ALGO,
+        help=f"centroider for profile scans (default: {driver.DEFAULT_CENTROID_ALGO!r})",
+    )
+    p.add_argument(
+        "--precursor-major",
+        action=argparse.BooleanOptionalAction,
+        default=driver.DEFAULT_PRECURSOR_MAJOR,
+        help="also write the precursor-major peak copy (constellation #109)",
     )
     p.add_argument(
         "--workers", type=int, default=1, help="parallel converter workers (spawn-mode; default 1)"
@@ -97,12 +123,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--force",
         action="store_true",
-        help="re-convert bundles that already exist (this mode only)",
+        help="re-convert even current v3 bundles",
     )
     p.add_argument(
         "--dry-run",
         action="store_true",
-        help="report how many would convert vs skip; change nothing",
+        help="report the on-disk inventory and what would convert; change nothing",
     )
     p.add_argument(
         "--rt-bin-width-s",
@@ -117,6 +143,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="scans per internal ScanBatch",
     )
     p.add_argument(
+        "--raw-name",
+        action="append",
+        metavar="STEM",
+        help="convert only this .raw (stem or file name; repeatable) — pilot runs",
+    )
+    p.add_argument(
         "--limit", type=int, default=None, help="cap the number of files converted (smoke tests)"
     )
     p.add_argument("--shard", type=int, default=0, help="SLURM-array shard index (with --n-shards)")
@@ -124,7 +156,7 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def main(argv: "list[str] | None" = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     config = load_config(args.config)
 
@@ -138,6 +170,7 @@ def main(argv: "list[str] | None" = None) -> int:
         except ImportError as exc:
             print(f"error: Thermo reader unavailable: {exc}")
             return 3
+        print(bundles.constellation_provenance(), flush=True)
 
     rc = 0
     for dataset in resolve_datasets(args.dataset, config):

@@ -34,6 +34,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
+from protostar import bundles
 from protostar.experiments import consensus_assembly, ms2_extract, scans
 
 DEFAULT_DATASETS = ("Zolg2017", "Gessulat2019", "Wilhelm2021")
@@ -85,8 +86,8 @@ def _scan_meta(bundle_dir: Path) -> tuple[dict[int, str], dict[int, dict]]:
     """Per-scan ``mode`` (``ANALYZER_activation_CE``) and a metadata panel
     (``_META_FIELDS``) from scan_metadata. Intensity is per-time, so the ion
     count is ``N ∝ I·iit`` — iit puts spectra on a true ion-count axis."""
-    t = pq.read_table(
-        bundle_dir / "scan_metadata.parquet",
+    t = bundles.read_scan_metadata(
+        bundle_dir,
         columns=["scan", "analyzer", "activation_type", "collision_energy", *_META_FIELDS],
     )
     cols = {c: t.column(c).to_pylist() for c in t.column_names}
@@ -133,14 +134,14 @@ def main(argv: list[str] | None = None) -> int:
         if psms.num_rows == 0:
             continue
         for raw_file in set(psms.column("raw_file").to_pylist()):
-            bundle = droot / "proc" / ds / "centroid" / raw_file
-            if not (bundle / "peaks.parquet").is_file():
+            # None = never reconverted to v3; raises on a pre-v3 bundle at the v3 location.
+            bundle = bundles.require_run_bundle(droot, ds, raw_file)
+            if bundle is None:
                 continue
             sub = psms.filter(pc.equal(psms.column("raw_file"), raw_file))
             try:
-                peaks = pq.read_table(bundle / "peaks.parquet")
                 modes, meta = _scan_meta(bundle)
-                trace = ms2_extract.extract_ms2_fragments(peaks, sub)
+                trace = ms2_extract.extract_ms2_fragments(bundle, sub)
                 # keyed by target_id (= row index into `sub`), NOT scan, so a
                 # chimeric scan's other PSMs don't leak onto this peptide's basis.
                 target_channels = ms2_extract.trace_to_target_channels(trace)

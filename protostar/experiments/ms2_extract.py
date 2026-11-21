@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Sequence
+from pathlib import Path
 
 import pyarrow as pa
 import torch
@@ -61,7 +62,7 @@ def xic_targets_from_psms(psms: pa.Table) -> pa.Table:
 
 
 def extract_ms2_fragments(
-    peaks: pa.Table,
+    peaks: pa.Table | Path | str,
     psms: pa.Table,
     *,
     acquisition_id: int = 0,
@@ -69,6 +70,9 @@ def extract_ms2_fragments(
     max_fragment_charge: int = 2,
 ) -> pa.Table:
     """Extract assigned-scan MS2 fragments for one bundle's PSMs.
+
+    ``peaks`` is a v3 bundle directory (streamed; see ``protostar.bundles``) or an
+    in-memory peak table (tests).
 
     Splits PSMs by ``mass_analyzer`` so each gets its analyzer-appropriate
     tolerance, runs XIC level-2 ``assigned_scans_only`` on each subset, and

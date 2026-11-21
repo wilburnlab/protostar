@@ -52,6 +52,7 @@ import pyarrow.parquet as pq
 import torch
 
 from constellation.massspec.spectra.consensus import align_to_basis
+from protostar import bundles
 from protostar.experiments import consensus_assembly, ms2_extract, scans
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -77,9 +78,10 @@ def _select_searches(droot, dataset, injection, limit):
     return zips[:limit]
 
 
-def _bundle_peaks(droot, dataset, raw_file):
-    bundle = droot / "proc" / dataset / "centroid" / raw_file / "peaks.parquet"
-    return pq.read_table(bundle) if bundle.is_file() else None
+def _bundle(droot, dataset, raw_file):
+    """The run's v3 bundle (``protostar.bundles``), or ``None`` if never reconverted.
+    Raises on a pre-v3 bundle at the v3 location — never a silent skip."""
+    return bundles.require_run_bundle(droot, dataset, raw_file)
 
 
 def _peptide_filter(psms, scope):
@@ -162,10 +164,10 @@ def main(argv: list[str] | None = None) -> int:
             continue
         for raw_file in set(psms.column("raw_file").to_pylist()):
             sub = psms.filter(pc.equal(psms.column("raw_file"), raw_file))
-            peaks = _bundle_peaks(droot, args.dataset, raw_file)
-            if peaks is None:
+            bundle = _bundle(droot, args.dataset, raw_file)
+            if bundle is None:
                 continue
-            trace = ms2_extract.extract_ms2_fragments(peaks, sub)
+            trace = ms2_extract.extract_ms2_fragments(bundle, sub)
             # keyed by target_id (= row index into `sub`), NOT scan, so a chimeric
             # scan's other PSMs don't pool into this peptide's spectrum.
             target_spectra = ms2_extract.trace_to_target_spectra(trace)

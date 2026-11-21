@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 """Stage 20 — acquisition time table.
 
-Reads acquisition datetime + instrument from each stage-10 convert bundle's
-``acquisition_metadata.parquet`` / ``manifest.json``, orders runs chronologically
+Reads acquisition datetime + instrument from each stage-10 (bundle v3) run's
+``manifest.json`` (``run_metadata``), orders runs chronologically
 per instrument, and persists a ``constellation.massspec.acquisitions.Acquisitions``
 table per dataset (``proc/<dataset>/acquisitions.parquet``) — the substrate for
 carryover and batch-effect analysis (acquisition-order reordering,
@@ -29,25 +29,27 @@ from _common import (
     resolve_datasets,
 )
 
+from protostar import bundles
 from protostar.metadata import driver
 
 
 def _build_dataset(args: argparse.Namespace, config: dict, dataset: str) -> int:
     droot = data_root(config, args.data_root)
-    bundles = driver.enumerate_bundles(droot, dataset)
+    runs = driver.enumerate_bundles(droot, dataset)
     out_path = driver.acquisitions_out_path(droot, dataset)
 
-    if not bundles:
+    if not runs:
         print(
-            f"  {dataset}: no converted bundles under "
-            f"{driver.proc_parent(droot, dataset)} — convert first"
+            f"  {dataset}: no current (v3) bundles under "
+            f"{bundles.proc_dir(droot, dataset)} — convert first "
+            f"({bundles.inventory(droot, dataset).summary()})"
         )
         return 0
 
     if args.dry_run:
         # Build to report instrument/datetime stats, but write nothing.
         acq = driver.build_acquisitions(droot, dataset)
-        s = driver.summarize(acq, len(bundles))
+        s = driver.summarize(acq, len(runs))
         print(
             f"  {dataset}: {s.n_bundles} bundles → {s.n_acquisitions} acquisitions, "
             f"{s.n_instruments} instrument(s), {s.n_datetime_null} undated → {out_path}"
@@ -60,7 +62,7 @@ def _build_dataset(args: argparse.Namespace, config: dict, dataset: str) -> int:
 
     acq = driver.build_acquisitions(droot, dataset)
     driver.write_acquisitions(acq, out_path)
-    s = driver.summarize(acq, len(bundles))
+    s = driver.summarize(acq, len(runs))
     print(
         f"  {dataset}: wrote {s.n_acquisitions} acquisitions "
         f"({s.n_instruments} instrument(s), {s.n_datetime_null} undated) → {out_path}"
