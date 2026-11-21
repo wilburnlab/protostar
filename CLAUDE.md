@@ -236,8 +236,8 @@ record.*
 June) was validated on synthetic data plus one 10-PROCAL real-data smoke (2026-06-11). The original
 notebook model (nb42b) is itself a single-file fit. The two differ, most importantly in the intensity
 likelihood: Constellation is Poisson-only, while the PI adopted Student-t on 2026-11-20 (decision log
-D5). The upstream fixes and features are specified as change requests for a dedicated Constellation
-session (`docs/constellation_change_requests/`).
+D5). The upstream fixes and features are specified as change requests (CR-*) in Constellation's
+`docs/plans/counter-pt-reconciliation.md`, for a separate Constellation session to implement.
 
 **Stage 30 and the Counter-motivation figures were built but not run at scale.**
 `30_extract_intermediates` (`protostar/intermediates/ms1_extract.py`) extracts per-(peptide, charge,
@@ -250,7 +250,7 @@ the data. The α̂(z) moment estimate (script 11) is confounded and is not to be
 2. History and decision-log docs.
 3. Pipeline migration to bundle v3 (`protostar/bundles.py`; convert, metadata and stage 30 on the
    bundle API).
-4. Constellation change-request spec.
+4. Constellation change requests, handed off as a Constellation plan (not tracked here).
 5. OSC pilot, reconversion and the full stage-30 run.
 6. Land the June backlog.
 7. Tests A–E (intensity likelihood, m/z offset level, space charge, binary interference state, MS1→MS2

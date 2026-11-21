@@ -30,9 +30,10 @@ yet been validated across files.
 - `archive:` means the private MS_Quant archive (`wilburnlab/ms_quant_archive`, commit 30d4fc5, under
   `ProteomeTools/`).
 - `constellation:` means `constellation/massspec/` at 77f540f.
-- `CR-*` IDs are the upstream change requests in
-  [`constellation_change_requests/counter_pt_reconciliation.md`](constellation_change_requests/counter_pt_reconciliation.md).
-- Tests A–E are the restart experiments listed there.
+- `CR-*` IDs are the upstream change requests in Constellation's
+  [`docs/plans/counter-pt-reconciliation.md`](https://github.com/wilburnlab/constellation/blob/main/docs/plans/counter-pt-reconciliation.md).
+- Tests A–E are protostar's restart experiments: A intensity likelihood (D5), B m/z offset level
+  (D4b), C space charge (D10), D binary interference state (D9), E MS1→MS2 conversion (D13).
 
 ---
 

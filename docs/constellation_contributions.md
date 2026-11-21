@@ -24,8 +24,9 @@ review) · `landed` (available in Constellation; cite the module).
 > It also records the bundle-v3 break. Since #104 (2026-10-31), bundles written before then raise
 > `OutdatedBundleError`, so protostar's June corpus must be reconverted.
 >
-> Open Counter work is specified as change requests in
-> [`constellation_change_requests/counter_pt_reconciliation.md`](constellation_change_requests/counter_pt_reconciliation.md),
+> Open Counter work is specified as change requests (CR-*) in Constellation's
+> [`docs/plans/counter-pt-reconciliation.md`](https://github.com/wilburnlab/constellation/blob/main/docs/plans/counter-pt-reconciliation.md)
+> (committed with the first PR of that set),
 > and feature status lives in [`counter_model_decisions.md`](counter_model_decisions.md) (D-numbers).
 
 | # | Capability | Target location in Constellation | Drives which protostar stage | Status | Notes |

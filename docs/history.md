@@ -61,7 +61,7 @@ The *reasons* each model feature is in, or out, are recorded in
 | 10-11 → 10-23 | Constellation | EncyclopeDIA pinned to 6.9.23, ScribeTwo, `PSM_TABLE` v2 (#100); ms-browser (#101); `rt.align` (#102) |
 | 10-26 → 11-02 | Constellation | Thermo reader revision (#103: centroiding, workers, part files). **Bundle v3** (#104, feature commit 10-31): profile written as a sibling `<stem>.profile/` in the same pass; older bundles raise `OutdatedBundleError`, and the design doc assumed "no outside users", so protostar's bundles must be reconverted |
 | 11-03 → 11-11 | Constellation | Search stack: sweep `extract_xic` (#105), search space (#106), library prediction (#107), query plumbing (#108), precursor-major layout with Mode B / `extract_xic_indexed` retired (#109), `QueryBatch.dense` (#110), KL scorer and `PeakPicker`, `SCAN_METADATA` v5 with `intensity_floor` (#111) |
-| **11-20** | all | **Restart.** MS_Quant archived to GitHub; protostar's canonical-7 guardrail retired in favour of the decision log; Student-t intensity adopted (PI decision); bundle-v3 pipeline migration and Constellation change requests planned |
+| **11-20** | all | **Restart.** MS_Quant archived to GitHub; protostar's canonical-7 guardrail retired in favour of the decision log; Student-t intensity adopted (PI decision); bundle-v3 pipeline migration; Counter change requests handed off as a Constellation plan (`docs/plans/counter-pt-reconciliation.md`) |
 
 ## What this history implies
 
