@@ -25,6 +25,11 @@ reconversion verifies (see ``protostar.bundles``).
   ``docs/plans/counter-pt-reconciliation.md``.
 - So outdated stems are routed to a separate ``force=True`` call. A pre-v3 run is
   never reported as "already converted".
+- A conversion killed hard (out of memory, wall time) leaves files in ``<stem>/``
+  or ``<stem>.profile/`` with no peak manifest. Without ``force``, Constellation
+  refuses a non-empty bundle directory, so these stems also go to the
+  ``force=True`` call. Never run two conversions of one dataset at once: the
+  second would clear the first's unfinished bundles.
 """
 
 from __future__ import annotations
@@ -96,23 +101,37 @@ class ConversionPlan:
     """``paths`` split by the state of their v3 output bundle."""
 
     current: list[Path] = field(default_factory=list)  # skip (already v3)
-    pending: list[Path] = field(default_factory=list)  # missing or incomplete
+    pending: list[Path] = field(default_factory=list)  # nothing on disk yet
     outdated: list[Path] = field(default_factory=list)  # pre-v3 at the v3 location: force
+    interrupted: list[Path] = field(default_factory=list)  # unfinished outputs: force
 
     @property
     def to_convert(self) -> list[Path]:
-        return self.pending + self.outdated
+        return self.pending + self.outdated + self.interrupted
+
+    @property
+    def forced(self) -> list[Path]:
+        """Stems whose existing outputs must be cleared before converting."""
+        return self.outdated + self.interrupted
+
+
+def _has_files(directory: Path) -> bool:
+    return directory.is_dir() and any(directory.iterdir())
 
 
 def classify(paths: list[Path], out_parent: str | Path) -> ConversionPlan:
-    """Split ``paths`` by the state of ``out_parent/<stem>``."""
+    """Split ``paths`` by the state of ``out_parent/<stem>`` and its ``.profile`` sibling."""
     plan = ConversionPlan()
+    out = Path(out_parent)
     for p in paths:
-        state = bundles.bundle_state(Path(out_parent) / p.stem)
+        bundle = out / p.stem
+        state = bundles.bundle_state(bundle)
         if state == "current":
             plan.current.append(p)
         elif state == "outdated":
             plan.outdated.append(p)
+        elif _has_files(bundle) or _has_files(bundles.profile_sibling(bundle)):
+            plan.interrupted.append(p)
         else:
             plan.pending.append(p)
     return plan
@@ -135,8 +154,8 @@ def run_conversion(
 
     Without ``force``:
     - current bundles are left to Constellation's own skip;
-    - outdated (pre-v3) bundles at the v3 location are re-converted with
-      ``force=True``.
+    - outdated (pre-v3) bundles at the v3 location, and the leftovers of an
+      interrupted run, are re-converted with ``force=True``.
 
     Returns ``[]`` for an empty input (``convert_batch`` would otherwise raise).
     """
@@ -159,8 +178,8 @@ def run_conversion(
     normal = plan.current + plan.pending
     if normal:
         results += convert_batch(normal, out, force=False, **common)
-    if plan.outdated:
-        results += convert_batch(plan.outdated, out, force=True, **common)
+    if plan.forced:
+        results += convert_batch(plan.forced, out, force=True, **common)
     return results
 
 
