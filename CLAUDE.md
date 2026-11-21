@@ -38,7 +38,7 @@ entry and **never** ship inside a `results/` record.
 
 | Capability | Home |
 |---|---|
-| Thermo `.raw` → parquet-bundle reader/writer (`convert`/`convert_batch`), scanmeta/IIT access | `constellation` (`massspec.io.thermo`) |
+| Thermo `.raw` → parquet-bundle reader/writer (`convert`/`convert_batch`), scanmeta/IIT access | `constellation` (`massspec.readers.thermo`) |
 | MS1/MS2 chromatogram extraction + windowed scoring | `constellation.massspec` |
 | Peak shapes (`HyperEMGPeak`, …) | `constellation.core.stats.peaks` |
 | Optimizers (`DifferentialEvolution`, `LBFGSOptimizer`) | `constellation.core.optim` |
