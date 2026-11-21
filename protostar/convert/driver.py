@@ -12,7 +12,7 @@ source SHA-256 — lives in Constellation.
 profile bundle::
 
     <data_root>/proc/<dataset>/<stem>/            # peaks/part-*.parquet, scan/acq metadata
-    <data_root>/proc/<dataset>/<stem>.profile/    # MS1 profile points (keep_profile=True)
+    <data_root>/proc/<dataset>/<stem>.profile/    # MS1 profile points + MS2 stored centroids
 
 The June 2026 pre-v3 bundles under ``proc/<dataset>/{centroid,profile}/`` are
 never written to here. They coexist untouched until their dataset's v3

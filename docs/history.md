@@ -62,6 +62,7 @@ The *reasons* each model feature is in, or out, are recorded in
 | 10-26 → 11-02 | Constellation | Thermo reader revision (#103: centroiding, workers, part files). **Bundle v3** (#104, feature commit 10-31): profile written as a sibling `<stem>.profile/` in the same pass; older bundles raise `OutdatedBundleError`, and the design doc assumed "no outside users", so protostar's bundles must be reconverted |
 | 11-03 → 11-11 | Constellation | Search stack: sweep `extract_xic` (#105), search space (#106), library prediction (#107), query plumbing (#108), precursor-major layout with Mode B / `extract_xic_indexed` retired (#109), `QueryBatch.dense` (#110), KL scorer and `PeakPicker`, `SCAN_METADATA` v5 with `intensity_floor` (#111) |
 | **11-20** | all | **Restart.** MS_Quant archived to GitHub; protostar's canonical-7 guardrail retired in favour of the decision log; Student-t intensity adopted (PI decision); bundle-v3 pipeline migration; Counter change requests handed off as a Constellation plan (`docs/plans/counter-pt-reconciliation.md`) |
+| 11-20 → 11-21 | protostar (OSC) | **Bundle-v3 reconversion.** A 5-file pilot (job 17014192: the nb42b file, Zolg 2xIT_2xHCD and ETD, Gessulat 3xHCD, Wilhelm DDA) is **bit-identical** to the June bundles (every m/z and intensity, MS1, MS2 and profile points) despite RawFileReader 1.4.5 → 8.0.42. v3 is 0.82× the June size; the precursor-major copy adds 15% of the June size and 28% of the time and is kept (PI decision). The full pass (jobs 17014460–2, 16 workers, Constellation 6e47177) converts **4,212 / 4,213** in 2 h 04 min to 4 h 47 min per dataset; the corrupt Wilhelm2021 stub fails cleanly. Stage 20 rebuilt; every acquisition row matches June (only the `source_kind` label changed) |
 
 ## What this history implies
 
@@ -70,5 +71,6 @@ The *reasons* each model feature is in, or out, are recorded in
 - **The protostar "canonical 7" was a copy of an April agent guardrail, not a reviewed specification.**
   Its m/z values pre-date the IIT fix, and its description of μ̂ does not match `calibration_model.py`.
   See decision-log entries D4b and D4c.
-- **The protostar data layer was finished against a bundle format that no longer opens.** Every
-  downstream stage depends on reconversion.
+- **The protostar data layer was finished against a bundle format that no longer opens.** It was
+  reconverted on 2026-11-20/21. A 5-file check found identical data, so June-era analyses should
+  stand at the data level; their code had to move to the v3 bundle API.
