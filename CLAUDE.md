@@ -128,7 +128,9 @@ analysis (which keyed off mzML files and FragPipe searches) — none of that car
   - The June 2026 pre-v3 trees `proc/{dataset}/{centroid,profile}/` are legacy and are deleted per
     dataset once v3 verifies.
   - Only MS1 survey scans are recorded in **profile** mode. **All MS2 (Orbitrap, ion-trap, ETD) are
-    centroided at acquisition** (Zolg et al. 2017), so the `.profile` bundle carries MS1 only.
+    centroided at acquisition** (Zolg et al. 2017). The `.profile` bundle holds the MS1 profile
+    points plus a copy of the MS2 stored centroids. MS1 peaks are the instrument's centroid stream
+    (with resolution, noise and baseline); MS2 peaks are the stored centroids (those three are null).
 - **Fragmentation mode is a per-scan property** derived from the scan filter string /
   scanmeta — not from pre-split files. Each pool was acquired as **4 injections** (`.raw`
   files): `DDA`, `2xIT_2xHCD`, `3xHCD`, `ETD` (Wilhelm2021 omits ETD for 60 pools). The 9
@@ -219,23 +221,24 @@ read-only in `wilburnlab/ms_quant_archive`; cite them, do not extend them.
 
 ## Status
 
-*Rewritten 2026-11-20 at the project restart. See [`docs/history.md`](docs/history.md) for the dated
-record.*
+*Rewritten 2026-11-20 at the project restart; data layer updated 2026-11-21. See
+[`docs/history.md`](docs/history.md) for the dated record.*
 
-**The data layer was completed in June 2026, but on a bundle format current Constellation refuses.**
+**The data layer is on Constellation bundle v3 (reconverted 2026-11-20/21).**
 
 - `00_fetch_raw`: all **4,213 `.raw`** files (seeded from the Cartographer tree) and all MaxQuant
   SEARCH zips (1460/888/1865) are on ESS.
-- `10_convert_raw`: **4,212 / 4,213** were converted in June, centroid and profile as two passes. The
-  one miss is a documented corrupt PRIDE source (Wilhelm2021 `…pool_122…3xHCD-1hnoincl-R1.raw`,
-  57,874 bytes; `docs/osc_runbook.md` "Known-skip").
-- **These bundles predate Constellation bundle v3** (#104, 2026-10-31). Any Constellation API given
-  one raises `OutdatedBundleError`, and there is no upgrader. **The corpus must be reconverted**,
-  after the convert driver is migrated to `convert_batch(keep_profile=…)`. The plan is a ~6-file pilot
-  to size it, then full reconversion; v1 bundles are deleted per dataset only after v3 verifies and
-  the PI confirms.
-- `15_reference_library` (all 8 `.msp` modes) and `20_build_metadata` (acquisition time table) were
-  done in June. Stage 20 must be re-run on v3 bundles.
+- `10_convert_raw`: **4,212 / 4,213** converted to bundle v3 in one pass: the centroid bundle, its
+  `.profile` sibling and the `precursor_major/` copy (Constellation 6e47177, Thermo RawFileReader
+  8.0.42). The one miss is a documented corrupt PRIDE source (Wilhelm2021
+  `…pool_122…3xHCD-1hnoincl-R1.raw`, 57,874 bytes; `docs/osc_runbook.md` "Known-skip").
+- A 5-file pilot found the v3 peaks and profile points **bit-identical** to the June bundles: every
+  m/z and intensity, MS1 and MS2, same scans. The rest of the corpus was not compared peak by peak;
+  on that evidence, work done on June data holds at the data level.
+- The June pre-v3 trees `proc/<dataset>/{centroid,profile}/` are still on ESS. They are deleted per
+  dataset only with the PI's go-ahead.
+- `15_reference_library` (all 8 `.msp` modes) was done in June. `20_build_metadata` was rebuilt on v3
+  (2026-11-21); every row matches the June tables (acquisition IDs, datetimes, instruments, order).
 
 **Counter: the port exists but has not been validated.** Constellation `massspec.counter` (#69–#86,
 June) was validated on synthetic data plus one 10-PROCAL real-data smoke (2026-06-11). The original
@@ -250,17 +253,13 @@ scan) MS1 isotope chromatograms for PROCAL and known-clear peptides. Only shard 
 (06-03). The four empirical figure scripts (`pipelines/experiments/10–14`) therefore rest on 1/16 of
 the data. The α̂(z) moment estimate (script 11) is confounded and is not to be published.
 
-**Next** (restart plan):
-1. Prep PR (CI pin, PSM_TABLE v2 fixture).
-2. History and decision-log docs.
-3. Pipeline migration to bundle v3 (`protostar/bundles.py`; convert, metadata and stage 30 on the
-   bundle API).
-4. Constellation change requests, handed off as a Constellation plan (not tracked here).
-5. OSC pilot, reconversion and the full stage-30 run.
-6. Land the June backlog.
-7. Tests A–E (intensity likelihood, m/z offset level, space charge, binary interference state, MS1→MS2
-   conversion).
+**Next** (restart plan; the prep, records, v3 migration, Constellation hand-off and reconversion are
+done):
+1. The full 16-shard stage-30 run on v3 bundles.
+2. Land the June backlog.
+3. Tests A–E (intensity likelihood, m/z offset level, space charge, binary interference state, MS1→MS2
+   conversion). Tests A and B wait on the Constellation change requests (CR-B1, CR-C1).
 
 Operational facts (in `docs/osc_runbook.md`): the libstdc++ `LD_LIBRARY_PATH` pin; convert is
 **ESS-I/O-bound**, so use 16 workers on an exclusive node (32 or more risks CLR-spawn flakiness); all
-MS2 is centroided at acquisition, so profile data covers MS1 only; ETD is converted and kept.
+MS2 is centroided at acquisition, so profile points exist for MS1 only; ETD is converted and kept.

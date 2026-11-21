@@ -55,8 +55,16 @@ python pipelines/15_reference_library.py --modes all --extract         # ~2.3 GB
 
 Constellation ≥ 2026-10-31 writes **bundle v3** in **one pass**: `proc/<dataset>/<stem>/` (the
 centroid peaks, `peaks/part-*.parquet`, plus scan and acquisition metadata) and a sibling
-`proc/<dataset>/<stem>.profile/` (MS1 profile points). Pre-v3 bundles, i.e. the June 2026 corpus in
-`proc/<dataset>/{centroid,profile}/<stem>/`, raise `OutdatedBundleError` in Constellation.
+`proc/<dataset>/<stem>.profile/` (the MS1 profile points, plus the stored centroids of every MS2
+scan, since MS2 was centroided at acquisition). With `precursor_major` on (the default), the peak
+bundle also gets a `precursor_major/` copy for MS2 sweeps. Pre-v3 bundles, i.e. the June 2026
+corpus in `proc/<dataset>/{centroid,profile}/<stem>/`, raise `OutdatedBundleError` in Constellation.
+
+**What the peaks are (`centroid_algo=thermo`).** A profile scan with a centroid stream (every
+ProteomeTools MS1 survey in the pilot) gets the instrument's own centroids, with `peak_resolution`,
+`peak_noise` and `peak_baseline`. A centroid-acquired scan (all MS2) gets its stored centroids,
+which carry no resolution, noise or baseline: those columns are null. Thermo's `Scan.ToCentroid`
+is used only for a profile scan with no centroid stream; no pilot file had one.
 
 Stage 10 never writes into the old trees and never deletes them. `--dry-run` reports them as
 "legacy". Delete a dataset's legacy trees only after its v3 conversion verifies (step 6), and only
@@ -72,15 +80,22 @@ export LD_LIBRARY_PATH="$CONDA_PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 cd ~/protostar
 python pipelines/10_convert_raw.py --dataset Zolg2017 --raw-name <stem> --no-precursor-major
 du -sh <data_root>/proc/Zolg2017/<stem> <data_root>/proc/Zolg2017/<stem>.profile
-#   Also check: MS1 peaks agree with the June centroid bundle of the same file (scan count,
-#   peaks per scan, intensity, and peak_resolution/noise/baseline still populated). The v3
-#   default centroider is Thermo's Scan.ToCentroid. If they disagree -> STOP and report.
+#   Also check: peaks agree with the June centroid bundle of the same file (scan count,
+#   peaks per scan, m/z and intensity), and MS1 peak_resolution/noise/baseline are populated.
+#   MS2 resolution/noise/baseline are null in v3 (June stored NaN). If they disagree -> STOP.
 #   Also convert the known-corrupt Wilhelm2021 file (below): expect status=error
 #   ("holds no mass-spectrometer data"), not a .NET stack trace.
 exit   # leave salloc
 
 # 5b. Full pass (one SLURM job per dataset; convert.sbatch sets LD_LIBRARY_PATH itself).
-#     Pass EXTRA_ARGS=--no-precursor-major if the pilot says so.
+#     EXTRA_ARGS=--no-precursor-major skips the precursor-major copy (about +15% disk and
+#     +28% time over the June bundles; kept for the 2026-11 pass, PI decision).
+#     With precursor-major on, convert_batch reads EVERY file in the job before it builds any
+#     layout or writes any peak manifest, so progress shows "0/N" for most of the run and a
+#     killed job leaves the whole dataset unfinished (stage 10 clears and redoes it on resubmit).
+#     Memory peaks while reading: 41-66 GiB at 16 workers, inside the default 77 GiB.
+#     2026-11 pass: Gessulat 2h04, Zolg 3h27, Wilhelm 4h47. Wilhelm ends FAILED (exit 1)
+#     because of the known-corrupt file below; check the log's "N ok, N skipped, N failed".
 for DS in Zolg2017 Gessulat2019 Wilhelm2021; do
   sbatch --account=<allocation> --export=ALL,PROTOSTAR_DIR=$HOME/protostar,DATASET=$DS \
     pipelines/slurm/convert.sbatch
@@ -88,7 +103,9 @@ done
 squeue --me
 
 # 5c. Acquisition tables: rebuild from v3. A June table is not "present" (it lacks the
-#     bundle-schema stamp), so no --force is needed.
+#     bundle-schema stamp), so no --force is needed. This overwrites
+#     proc/<dataset>/acquisitions.parquet: copy the old table aside first to compare.
+#     (2026-11: every row matched June except source_kind, thermo_raw -> thermo_acquisition.)
 python pipelines/20_build_metadata.py --dataset all
 ```
 
@@ -117,9 +134,9 @@ Verified faithful to the source (2026-05-31): a fresh re-download is byte-identi
 the **source archive**, not a truncated download. Wilhelm2021 publishes no checksums, so the fetch
 size-check (57,874 == expected) passes and the stub is retained. Do not chase the perpetual
 "1 pending"; re-fetching reproduces the identical stub. Since Constellation beedabb (2026-10-26)
-the reader checks for an MS device before selecting it, so this file should now come back as a
-per-file `status=error` ("holds no mass-spectrometer data") rather than a .NET stack trace. Confirm
-this in the reconversion pilot (ledger #15).
+the reader checks for an MS device before selecting it, so this file comes back as a per-file
+`status=error` ("holds no mass-spectrometer data") rather than a .NET stack trace (confirmed in the
+2026-11-20 reconversion pilot; ledger #15). No bundle is written.
 
 ## Notes
 - Idempotent throughout — re-running after an interruption is the recovery path.
