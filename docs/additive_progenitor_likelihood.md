@@ -1,5 +1,18 @@
 # Additive-Progenitor Joint Likelihood
 
+> **Provenance banner (added 2026-11-20). This is a historical design document.**
+>
+> It was copied from MS_Quant (`ProteomeTools/docs/additive_progenitor_likelihood.md`, 2026-04-16) and
+> is kept as-is for its derivations. **For the current status of each feature, see
+> [`counter_model_decisions.md`](counter_model_decisions.md).**
+>
+> In particular:
+> - The global **ν_mz ≈ 3.06** cited below is a pre-IIT value. nb42b converged to ν_mz = 7.77 (D4c).
+> - The additive-progenitor framing is one of two candidate interference models, **under test**
+>   against a per-point binary state (D9). It has not been run on PT data.
+> - The intensity term is **Student-t** (D5, adopted 2026-11-20). Constellation's current Poisson-only
+>   implementation of this document's zero-region term is a known departure (CR-B1).
+
 > **Scope note (protostar).** This is the mathematical foundation for the Counter
 > `Panel.forward()` implementation, which lives in **Constellation** (`constellation.massspec`).
 > The canonical home for this spec is Constellation's `docs/plans/cartographer-counter-port.md`;

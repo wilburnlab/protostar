@@ -1,63 +1,80 @@
 # Constellation contribution ledger
 
-protostar holds **no model code** (see [`../CLAUDE.md`](../CLAUDE.md)). Every modeling /
-likelihood / peak-shape / scoring / reader capability that an experiment needs but
-Constellation does not yet provide is tracked here. An experiment that depends on an item is
-**gated on that item landing upstream**. Short-lived local prototypes are allowed only with a
-row here (status `prototyping`) and a promotion plan, and must never ship inside a `results/`
-record.
+protostar holds **no model code** (see [`../CLAUDE.md`](../CLAUDE.md)). This ledger tracks every
+modelling, likelihood, peak-shape, scoring or reader capability that an experiment needs but
+Constellation does not yet provide.
 
-**Status:** `needed` (not started) · `prototyping` (local, must promote) · `pr-open`
-(upstream review) · `landed` (available in Constellation; cite the module).
+- **Gating:** an experiment that depends on an item waits until the item lands upstream.
+- **Local prototypes:** allowed only with a row here (status `prototyping`) and a plan for moving the
+  code upstream. They never ship inside a `results/` record.
+
+**Status:** `needed` (not started) · `prototyping` (local; must move upstream) · `pr-open` (upstream
+review) · `landed` (available in Constellation; cite the module).
+
+> **Ledger refreshed 2026-11-20** against `constellation@77f540f` (main). Each claim was checked
+> against the source.
+>
+> This refresh corrects the 2026-09-05 refresh, which overstated the Counter port:
+> - **"Ported and validated" is wrong.** The port (#69–#86) was validated on synthetic data plus **one**
+>   real-data smoke (10 PROCAL, 2026-06-11).
+> - PanelSet, center-weighted gradients and identification Λ were **never built**.
+> - The CLI's interval path is **Laplace**, not VB.
+> - The intensity term is **Poisson-only**; the Student-t code exists but is never called.
+>
+> It also records the bundle-v3 break. Since #104 (2026-10-31), bundles written before then raise
+> `OutdatedBundleError`, so protostar's June corpus must be reconverted.
+>
+> Open Counter work is specified as change requests in
+> [`constellation_change_requests/counter_pt_reconciliation.md`](constellation_change_requests/counter_pt_reconciliation.md),
+> and feature status lives in [`counter_model_decisions.md`](counter_model_decisions.md) (D-numbers).
 
 | # | Capability | Target location in Constellation | Drives which protostar stage | Status | Notes |
 |---|---|---|---|---|---|
-| 1 | Thermo `.raw` reader (`ThermoReader`, `convert`) | `massspec.io.thermo` | `10_convert_raw`, `20_build_metadata` | **landed** | Verified production-ready: `constellation massspec convert` CLI + `ThermoReader`/`convert_batch`; centroid (per-peak resolution/noise/baseline) + profile (raw FT grid). |
-| 2 | Convert bundle: `peaks.parquet` + `scan_metadata.parquet` (IIT/TIC/`filter_string`) + `acquisition_metadata.parquet` + `manifest.json` | `massspec.io.thermo` | `10_convert_raw` | **landed** | `convert`/`convert_batch`; RT-binned row groups; source SHA-256 in manifest; per-scan `filter_string` recovers fragmentation mode. ("mzpeak" retired — no HUPO-PSI standard exists.) |
-| 3 | MS1/MS2 chromatogram extraction + **MS2 spectrum retrieval** (per-scan centroid peak lists by precursor isolation m/z + RT + scan-filter mode) + `rt_range` predicate pushdown + windowed MS1 scoring | `massspec` | `30_extract_intermediates`, exp 01–08 | needed | Port from `cartographer/data/chromatogram.py` + `data/spectra.py`. `MS1TensorResult` + `rt_range` pushdown were pruned from Cartographer (see massspec CLAUDE.md "worth surfacing"). **MS2-retrieval slice is Lane A** (Part I); MS1-extraction + windowed-scoring slice is Lane B (Part II). **A3 sub-slice (`retrieve_spectra(peaks, scans, level=2)` → per-scan full centroid peak lists)** is the residual/"other"-channel enabler — **deferred fast-follow**: the Part-I first milestone runs on the existing XIC level-2 `assigned_scans_only` path (b/y only) with `scan_metadata.tic` as the per-scan total proxy, then adds the full simplex once `retrieve_spectra` lands. |
-| 4 | `HyperEMGPeak` (+ `WarpedEMGPeak`, `SplinePeak`) | `core.stats.peaks` | experiments (peak fitting) | needed | Only `GaussianPeak`/`EMGPeak` shipped; `core.optim.DifferentialEvolution` is available, so these are the next peak-numerics PR. |
-| 5 | `GlobalCalibration` module (α₀/α₁/d_mz/ρ_R/ν_mz/α_mz, per file) | `massspec` | `04_procal_calibration` experiment | needed | Spec: Counter port doc §Architecture. |
-| 6 | `Mass` module (per-progenitor: f_z, p_k, HyperEMG, ν_I, c_mz; MS2 channel) | `massspec` | Counter experiments | needed | The core progenitor object. |
-| 7 | `Panel` + `PanelSet` (2D m/z×RT panels; additive-progenitor `forward()`; center-weighted gradients; Poisson zero-cell term) | `massspec` | Counter experiments | needed | Math: [`additive_progenitor_likelihood.md`](additive_progenitor_likelihood.md). |
-| 8 | Seeded/global-agnostic scoring function + identification Λ (Counter v2 §10) | `massspec` | `05_counter_validation` | needed | `Λ_q = L_P(Q) − L_P(Q\{q})`. |
-| 9 | Laplace credible intervals on N_total | `massspec` | uncertainty experiments | needed | 6×6 Hessian at MAP; well-conditioned now that α is stable. |
-| 10 | EncyclopeDIA / Scribe search wrapper (reads `.raw` natively) | `thirdparty` + `massspec.io` | `15_reference_library` (optional re-search) | needed | EncyclopeDIA adapter (`massspec.io.encyclopedia`) + `thirdparty` registry exist; a search-invocation wrapper may need adding. Optional re-search **cross-check to #11**; not on the critical path. |
-| 11 | MaxQuant search-output reader (`txt/` export: `msms`/`evidence`/`peptides`/`parameters`/…) | `massspec.io.maxquant` | exp 01–02 (PROCAL & extend identification); search↔raw association | **landed** | `read_maxquant_search` / `load_search(..., format="maxquant")` → `Search.psms` (new `PSM_TABLE`); ProForma modseqs (fixed mods from `parameters.txt`); handles root + `txt/`-nested layouts; header-only `msms.txt` = 0 PSMs. `search.crosscheck.cross_validate_against_scan_metadata` joins on `(raw_file, scan)` and checks analyzer/fragmentation (ET-supplemental treated as consistent). Reader-only (no re-run); v2 defers `evidence`/`peptides`/fragment annotations. |
-| 12 | MS2 spectral-similarity suite: cosine similarity, normalized dot product, Pearson, spectral-entropy similarity (Li 2021), **multinomial deviance** (`2·N·KL`), + a unified `compare_spectra` over aligned vectors | `core.stats.losses` (extend) + new `massspec.spectra.similarity` | exp 01 (`01_ms2_spectral_scoring`) | **prototyping** | Implemented + unit-tested in the constellation working tree (pending commit/PR). `core/stats/losses.py`: `cosine_similarity`, `normalized_dot`, `pearson_correlation`, `spectral_entropy_similarity` (last-axis reduction, `-1` sentinel). `massspec/spectra/similarity.py`: `multinomial_deviance` (direct G², NaN-free at zero counts) + `compare_spectra` dispatcher. Reuses `kld`/`spectral_angle`/`l1/l2_normalize`. Tests: `test_core_stats_losses.py` (extended), `test_massspec_spectra_similarity.py` — incl. the **spine identity** `multinomial_deviance ≡ −2·Δ Multinomial.log_prob ≡ 2N·KL` and the χ²_{K−1} mean. |
-| 13 | Consensus / aggregated-spectrum builder (align replicate spectra to a fixed fragment-ladder basis; aggregate sum/median + per-channel dispersion + per-replicate deviance-from-bulk) | new `massspec.spectra.consensus` | exp 01–02 | **prototyping** | Implemented + unit-tested in the constellation working tree (pending commit/PR). `FragmentBasis`/`fragment_basis` (wraps `fragment_ladder`), `align_to_basis` (reuses `match_mz`; analyzer-aware ppm/Da), `build_consensus` → `ConsensusSpectrum` (`aggregate∈{sum,median}`, `normalize` flag — **`mean` dropped** as `sum/R`; retains `per_replicate[R,K]` + `deviance_from_bulk[R]`, **no blind-inlier assumption**). Tests: `test_massspec_spectra_consensus.py`. Reference impl `cartographer/data/spectra.py`. **Deferred A4:** `refine_consensus` (iterative multinomial-deviance outlier screening) — the airtight robustness pass; not on the first-milestone path. |
-| 14 | Multinomial fragment-intensity **generative** model (peptide → expected fragment propensities → `Multinomial` over channels) | `massspec` | exp 01 (extend) | needed | **Deferred (later phase).** Near-term exp 02 only *characterizes* multinomial shot noise using the existing `Multinomial` (`core/stats/distributions.py`); this predictive model is not built yet. |
-| 15 | Graceful skip of empty/aborted `.raw` in `convert`/`convert_batch` (catch `SelectInstrument` `ArgumentOutOfRangeException` → emit a `skipped`/`corrupt` BatchResult, not an unhandled .NET stack trace) | `massspec.io.thermo` | `10_convert_raw` | needed | **Low-priority robustness.** One real case: Wilhelm2021 `…pool_122…3xHCD-1hnoincl-R1.raw` is a 57,874-byte aborted acquisition (valid OLE2 `Finnigan` magic, no MS device) that PRIDE hosts as-is (re-download byte-identical; no published checksum). `convert_batch` should classify it as a clean skip so a full pass reports 4,212/4,213 without a hard error. Documented in [`osc_runbook.md`](osc_runbook.md). |
+| 1 | Thermo `.raw` reader (`ThermoReader`, `convert`, `convert_batch`) | `massspec.readers.thermo` | `10_convert_raw`, `20_build_metadata` | **landed** (API changed) | Revised in #103 (2026-10-27) and #104 (2026-10-31).<br>• **`profile=` was removed.** The call is now `convert_batch(..., keep_profile=True, centroid_algo=…, precursor_major=True, allow_empty_levels=False)`.<br>• **One pass** writes the centroid bundle plus a sibling `<stem>.profile/` bundle.<br>• protostar's convert driver still passes `profile=`, so it raises `TypeError`. Being migrated (restart PR "bundle-v3 pipelines"). |
+| 2 | Convert bundle: peaks, `scan_metadata`, `acquisition_metadata`, `manifest.json` | `massspec.bundle` + `massspec.readers.thermo` | `10_convert_raw` and every reader of bundles | **landed** (v3) | **Bundle v3** (#104):<br>• Peaks live in `peaks/part-NNNNN.parquet`, not `peaks.parquet`.<br>• Profile data is in `<stem>.profile/profile/part-*`.<br>• An optional `precursor_major/` copy (#109).<br>• Access goes through `massspec.bundle`: `read_bundle_manifest`, `peaks_dataset`, `points_dataset`, `is_profile_bundle`, `related_bundles`.<br>• Older manifests raise `OutdatedBundleError` (no upgrader).<br>`SCAN_METADATA` is now v5, which adds `intensity_floor` (#111). |
+| 3 | MS1/MS2 chromatogram extraction + MS2 spectrum retrieval + RT-window pushdown | `massspec.quant.chromatogram`, `massspec.sweep` | `30_extract_intermediates`, experiments | **landed** (XIC) · needed (A3) | `extract_xic_scan_major` (#61) still exists and now accepts a bundle path. **`extract_xic_indexed` was removed** (#109, Mode B retired).<br>New sweep `extract_xic(peaks, targets, *, levels, tolerances, rt_window, layout, claims, fragment_abundance, …)` (#105) returns a `SweepResult`. The `QueryBatch.dense` views (#110) provide `Dense.parent_slots` and `Dense.brackets` for interpolating MS1 at MS2 scans.<br>**A3 `retrieve_spectra` (full per-scan MS2 peak lists) still does not exist.** Re-evaluate whether the sweep's level-2 output covers that need. |
+| 4 | `HyperEMGPeak` (+ `WarpedEMGPeak`, `SplinePeak`) | `core.stats.peaks` | experiments (peak fitting) | **landed** (HyperEMG) | #67. Area-parameterised left+right EMG mixture, vmap-safe, fit with `core.optim.DifferentialEvolution` plus LBFGS polish. 4894d07 (2026-11-07) changed "the EMG mode", so June fits need re-checking. `WarpedEMGPeak` and `SplinePeak` are still `needed`. |
+| 5 | `GlobalCalibration` (α₀/α₁, d_mz, m/z offset, α_mz/ν_mz) | `massspec.counter.calibration` | PROCAL calibration | **landed**, with gaps | #72–#73, fit by `StagedCalibration`. Gaps:<br>• Defaults α₀ = 1, α₁ = 15 (α(2) = 31) are not evidence-based.<br>• The CLI fits α only with `--gain`, and there is no prior (CR-B3, decision log D1).<br>• Only **one file-level** `mz_offset_ppm` (CR-C1, D4b).<br>• `rho` is a dead parameter (CR-A5).<br>α_mz/ν_mz defaults 0.6/7.8 match nb42b. |
+| 6 | Per-progenitor model (f_z, p_k, HyperEMG, ν_I, c_mz) | `massspec.counter.model` | Counter experiments | **landed** (MS1), with gaps | #70, shipped as **`Progenitor`**. p_k is theoretical plus a learned k ≥ 1 correction (D3).<br>**`log_nu_intensity` is a dead parameter:** the intensity term is a Poisson PMF on `I·τ/α`, and `channels.intensity_log_prob` (Student-t) is never called (CR-B1, D5).<br>The CLI fits **one charge per target** (CR-B4, D14). No MS2 channel. |
+| 7 | `Panel` + additive-progenitor score + zero-cell term (`PanelSet`, center-weighted gradients) | `massspec.counter.panel` | Counter experiments | **landed** (Panel) · **not built** (PanelSet, center-weighting) | #77. `Panel`, `panel_log_prob`; censoring uses the Poisson void probability with **`floor_ions = 1.0`**, while the real floor is about 200 ions at z = 2 (CR-B2, D8).<br>Multi-progenitor machinery: `discover` (#78), `candidates` (#82), `component` (#83–#85).<br>**Bug:** `component` stacks members by channel *index*, while `_channels_overlap` matches any channel to any channel by m/z (CR-A2).<br>**Never run on PT data.** |
+| 8 | Scoring + identification Λ | `massspec.counter` | Counter validation | **landed** (scoring) · **needed** (Λ) | `panel_log_prob`, `attribution` (#79), CLI emit (#86). Λ is deferred in `counter.discover`. |
+| 9 | Credible intervals on N_total | `massspec.counter.orchestrate` | uncertainty experiments | **landed**, with gaps | `estimate_n` defaults to VB, but **the CLI calls `inference="map"`, which gives a Laplace interval** (`cli/counter.py:187`). `discover` and `component` report Laplace intervals *conditional* on the other progenitors. No coverage test on real data (CR-D1, D12). |
+| 10 | EncyclopeDIA / ScribeTwo search (reads `.raw` natively) + predicted libraries | `massspec.search.encyclopedia` + `thirdparty.encyclopedia`; `massspec.library` | `15_reference_library` (optional re-search) | **landed** | History:<br>• Wrapper ported 2026-05-27 (7328487, EncyclopeDIA 6.5.15).<br>• Koina prediction backend #89 and mass-tolerance units #90 (2026-09-05).<br>• **#100 (2026-10-19)** pinned EncyclopeDIA 6.9.23, added ScribeTwo (DDA spectrum-centric with FDR) and `PSM_TABLE` v2 (`precursor_id`, `qvalue`).<br>Search-space and library prediction: #106–#107. RT alignment: `rt.align` (#102).<br>(The 2026-09-05 refresh attributed the wrapper to #89/#90.) |
+| 11 | MaxQuant search-output reader | `massspec.io.maxquant` | experiments (PROCAL and extended identification) | **landed** | `read_maxquant_search` returns `Search.psms`, using `PSM_TABLE`, now **v2** (two added nullable columns). protostar's PSM test fixture was updated for v2 in restart PR #18. |
+| 12 | MS2 spectral-similarity suite | `core.stats.losses` + `massspec.spectra.similarity` | exp 01–02 | **landed** | #65. 4894d07 (2026-11-07) made the similarities scale-free, so re-check the exp02 and exp03 numbers. |
+| 13 | Consensus / aggregated-spectrum builder | `massspec.spectra.consensus` | exp 01–02 | **landed** | #65. `refine_consensus` is deferred. |
+| 14 | Multinomial fragment-intensity **generative** model | `massspec` | MS2 experiments; MS1→MS2 conversion (D13) | needed | Should be over-dispersed (exp03: n_eff in the hundreds). Folded into CR-D3. |
+| 15 | Graceful handling of empty or aborted `.raw` | `massspec.readers.thermo` | `10_convert_raw` | **landed** (verify) | beedabb (2026-10-26) checks the instrument count before `SelectInstrument` and raises "holds no mass-spectrometer data", which `convert_batch` reports as `status='error'` instead of a .NET stack trace. **Verify on the known-corrupt Wilhelm2021 file during the reconversion pilot.** |
+| 16 | **Orbitrap m/z ↔ frequency reconstruction** | `massspec.readers.thermo` (coefficient capture) + a new transform / panel builder | profile frequency-grid experiment ([`orbitrap_profile_frequency.md`](orbitrap_profile_frequency.md), pending commit) | **prototyping** | The reader captures only `ft_conversion_a/b/c` (`_trailer.py:178-184`). The June prototype found a uniform Δf = 1/512 grid. The payoff would be structural, not better per-peak precision. **Deferred**: profile is a referee, not the PT path (D17). |
 
 ## Build lanes (priority)
 
-The MS2-first manuscript ([`manuscript_roadmap.md`](manuscript_roadmap.md)) reprioritizes these
-items into three lanes by what they unblock:
+From the MS2-first manuscript ([`manuscript_roadmap.md`](manuscript_roadmap.md)), restated for the
+restart:
 
-- **Lane A — foundational, unblocks Part I (MS2).** #11 (MaxQuant reader — identification) is
-  **landed**; #12 (spectral-similarity suite) and #13 (consensus builder) are **prototyping**
-  (implemented + unit-tested in the constellation tree, pending commit/PR); the A3 **MS2-retrieval
-  slice of #3** is the only remaining piece and is a deferred fast-follow (the first milestone runs
-  without it). This is the minimal path to the first runnable experiment.
-- **Lane B — unblocks Part II (MS1 error structure).** #3 (MS1 extraction + windowed scoring),
-  the `error_model` α(z)/Student-t likelihoods, #5 (GlobalCalibration).
-- **Lane C — unblocks Part III (Counter).** #4 (HyperEMG peak shapes), #6 (`Mass`), #7
-  (`Panel`/`PanelSet`), #8 (scoring + Λ), #9 (Laplace credible intervals).
-- **Deferred:** #14 (multinomial generative), #10 (EncyclopeDIA/Scribe re-search).
-
-**Items #3–#9 are a Cartographer→Constellation port, not new invention.** The predecessor
-engine lives at `/home/dbwilburn/projects/cartographer/cartographer/` — `calibration.py` (#5),
-`error_model.py` (the α(z) + Student-t m/z & intensity likelihoods under #5/#6), `masses.py`
-(#6), `scoring.py` (#8), `data/chromatogram.py` (#3), `data/spectra.py` (MS2 retrieval) — and
-the migration is scoped in Constellation's `docs/plans/cartographer-counter-port.md`. Effort is
-*port-and-validate* against the nb42b empirics in
-[`model_specification.md`](model_specification.md). Caveat: that port doc rates the low-level
-likelihoods "exists cleanly," but that describes Cartographer/notebooks — they are **not yet
-importable from Constellation**.
+- **Lane 0 — data (blocking everything).** Migrate the protostar pipelines to the bundle-v3 API (#1,
+  #2), then reconvert the corpus. A Constellation-side nicety is CR-A4: `convert_batch` should
+  reconvert outdated bundles rather than report them `skipped`.
+- **Lane A — Part I (MS2).** #11, #12 and #13 have landed; re-check the numbers after 4894d07. A3
+  (#3) is still open but may be covered by the sweep.
+- **Lane B — Part II (MS1 error structure).** Extraction (#3) has landed. **The model is not ready:**
+  the intensity likelihood (CR-B1, D5), the detection floor (CR-B2, D8), the α prior (CR-B3, D1) and
+  the m/z offset level (CR-C1, D4b) are open. The empirical figures in
+  [`counter_figures_notes.md`](counter_figures_notes.md) are descriptive only until these land.
+- **Lane C — Part III (Counter).** Correctness fixes come first: ProForma parsing in the CLI (CR-A1),
+  component channel alignment (CR-A2), and v3 inputs (CR-A3). After that come cross-file validation,
+  the interference choice (D9), uncertainty (CR-D1), and the MS1→MS2 conversion model (D13, CR-D3).
 
 ## Reference architecture
 
-- Counter engine architecture + Counter v2 → Constellation gap audit:
-  `~/projects/constellation/docs/plans/cartographer-counter-port.md`.
-- Additive-progenitor joint NLL: [`additive_progenitor_likelihood.md`](additive_progenitor_likelihood.md).
-- Empirical model values + canonical-component checklist: [`model_specification.md`](model_specification.md)
-  and [`../CLAUDE.md`](../CLAUDE.md).
+- **Counter engine design:** `~/projects/constellation/docs/plans/cartographer-counter-port.md` and
+  `counter-real-data-deconstruction.md`.
+- **Bundle v3 rationale:** `~/projects/constellation/docs/plans/profile-and-peak-lists.md`. Search
+  stack: `sweep.md`, `search-space.md`, `peak-detection.md`.
+- **Feature decisions:** [`counter_model_decisions.md`](counter_model_decisions.md).
+- **History:** [`history.md`](history.md).
+- **Historical specs** (banners list their stale values):
+  [`model_specification.md`](model_specification.md) and
+  [`additive_progenitor_likelihood.md`](additive_progenitor_likelihood.md).
+- **Original prototyping:** the private archive `wilburnlab/ms_quant_archive`. Its
+  `scripts/calibration_model.py` imports Cartographer's `feat/chromatogram-logL-scoring` branch.
