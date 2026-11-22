@@ -42,21 +42,34 @@ yet been validated across files.
 - **Status:** Adopted for the functional form. **Under test** for the values and whether they transfer
   across files.
 - **Claim:** intensity per ion scales with charge, roughly linearly. Ion count is
-  `N = I·iit/α(z)`, where intensity is per unit time.
+  `N = I·iit/α(z)`, where Thermo's reported intensity is a rate **per second**: **iit in seconds**
+  (the trailer's "Ion Injection Time (ms)" divided by 1000).
 - **Evidence:**
   - nb22–23 established α as charge-linear.
   - nb42b fit α₀ = 1.06 and α₁ = 10.2, so α(2) = 21.5 (archive:
-    `results/calibration/nb42b/42b_global_params_printed.csv`). That value has the resolution factor
-    ρ_R = 0.707 divided out.
+    `results/calibration/nb42b/42b_global_params_printed.csv`), with iit in seconds
+    (`scripts/calibration_model.py`, `iit_s`). That value has the resolution factor ρ_R = 0.707
+    divided out.
+  - Independent agreement: Hsu et al. 2025 (J. Proteome Res. 24:5742) calibrate `I = α·N/t` in ions/s.
+    - Their code (`uw-maccosslab/manuscript-ion-counting`, `Ion_Calibration_Table1_FigS3-5.Rmd`)
+      computes `intensity * (injectionTime / 1000)`.
+    - They report Orbitrap α = 9.4–15.4 by instrument (Orbitrap Fusion 15.44, Exploris 10.95).
+    - Their method, the shot-noise variance of ion ratios, is nb42b's. Their ions are fragments of
+      Glu-fibrinopeptide B; the charge is not stated, so read it as roughly z = 1.
   - α₀ and α₁ are **not separately identified** on DDA PROCAL: there are only about 30 z = 1
     observations.
 - **Constellation:**
+  - `counter/iit.py` uses iit in **milliseconds** ("ms convention"). With α of the evidenced size,
+    that makes N 1000× too large and the shot-noise variance (D2) 1000× too small (CR-A6).
   - `counter/calibration.py:44-56`, `GlobalCalibration`, defaults to α₀ = 1 and α₁ = 15, giving
-    α(2) = 31. No evidence supports that default.
+    α(2) = 31. That is seconds-sized, but it is applied in ms, and no evidence supports it.
   - α is fit only when the CLI is given `--gain`.
   - There is no prior; nb41 needed a log-normal prior on α₁ to avoid a degenerate large-α mode.
-- **Next:** CR-B3 adds a per-file fit with a prior. Fit α per file across the PROCAL files and check
-  how stable it is.
+- **Next:** CR-A6 (seconds), then CR-B3 (a per-file fit with a prior). Fit α per file across the PROCAL
+  files and check how stable it is.
+- **History:**
+  - 2026-11-21: the unit was settled as seconds (nb42b code; Hsu et al. 2025 code), and the
+    Constellation mismatch was found (CR-A6).
 
 ## D2 — IIT enters the variance, not α
 
@@ -68,7 +81,8 @@ yet been validated across files.
   - Without `/iit`, α inflated 10–100× and the per-peptide ν collapsed to its floor.
   - DDA IIT spans about 0.2–34 ms.
 - **Constellation:** the expected count is `λ = N(t)·f_z·p_k·τ`, with τ the scan's IIT, and the
-  observation is `n = I·τ/α`. Consistent with this entry.
+  observation is `n = I·τ/α`. That is consistent in form, but τ is in ms, not seconds, so the variance
+  is 1000× too small at evidenced α (D1, CR-A6).
 
 ## D3 — Fitted isotope fractions p_k, not theoretical
 
@@ -167,15 +181,27 @@ yet been validated across files.
   - nb42c tried a censored term with an arbitrary `cens_weight`, which was not a proper likelihood;
     that notebook is quarantined.
   - The derivation is in [`additive_progenitor_likelihood.md`](additive_progenitor_likelihood.md).
-  - The real detection floor is far above one ion: about 200 ions at z = 2, and about 4,000 counts in
-    one file.
+  - The floor is an *intensity*; its ion equivalent scales with iit.
+    - In nb42c (archive `notebooks/42c_peak_boundary_refinement.ipynb`, cell 14) the floor, taken as
+      the 0.1th percentile of matched MS1 intensities, was 2,959.
+    - At the median iit of 1.4 ms and α(2) = 21.3, the notebook printed `N_FLOOR = 0 ions`, which is
+      about 0.2 ions with iit in seconds (D1). At a 30 ms iit the same floor is about 4 ions.
+    - The "about 200 ions" in this entry before 2026-11-21 (from `docs/nb42c_state_of_play.md`) put iit
+      in ms into seconds-convention arithmetic.
+    - A sub-ion floor suggests that the lowest matched intensities are noise peaks. The floor should
+      come from each scan's own record, not from a percentile.
 - **Constellation:**
-  - Censoring uses the Poisson void probability with `floor_ions = 1.0` (`counter/panel.py:51`).
+  - Censoring uses the Poisson void probability with `floor_ions = 1.0` (`counter/panel.py:51`), one
+    fixed ion count for every scan.
   - `SCAN_METADATA` v5 (#111) now records each scan's `intensity_floor`.
 - **Next:**
-  - CR-B2 takes the floor from the scan.
+  - CR-B2 takes the floor from the scan, in intensity units, converted to ions per scan with iit in
+    seconds (CR-A6).
   - Under D5, the censored term must be the Student-t CDF below the floor, so it is consistent with the
     data term (part of CR-B1).
+- **History:**
+  - 2026-11-21: the "about 200 ions" floor was corrected to about 0.2 ions at the nb42c median iit;
+    the ion-equivalent floor varies with iit.
 
 ## D9 — Interference
 
