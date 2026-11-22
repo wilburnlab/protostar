@@ -132,11 +132,13 @@ def main() -> int:
     )
     ap.add_argument("--fractions", nargs="+", type=float, default=[0.0, 0.1, 0.3, 1.0],
                     help="0 = the run's pool and standards only; else that fraction of all sequences")  # fmt: skip
-    ap.add_argument("--layouts", nargs="+", default=["scan_major", "precursor_major"])
+    ap.add_argument("--layouts", nargs="+", default=["precursor_major", "scan_major"])
     ap.add_argument("--workers", nargs="+", type=int, default=[16])
     ap.add_argument("--full-grid-stem", default=POOL1[0],
                     help="the run that gets every fraction x layout x workers; the others get fraction 1.0 only")  # fmt: skip
     ap.add_argument("--dense-fractions", nargs="*", type=float, default=[0.0, 0.01])
+    ap.add_argument("--max-scan-major-fraction", type=float, default=0.3,
+                    help="scan-major shuffles every match through disk; above this, precursor-major only")  # fmt: skip
     ap.add_argument("--tol-ppm", type=float, default=20.0)
     args = ap.parse_args()
 
@@ -188,7 +190,10 @@ def main() -> int:
             tc = time.monotonic()
             plan = compile_queries(targets, levels=[1], channels=channels, acquired_ranges=None)
             compile_s = time.monotonic() - tc
-            for layout in args.layouts if full else args.layouts[:1]:
+            layouts = args.layouts if full else args.layouts[:1]
+            if frac > args.max_scan_major_fraction:
+                layouts = [lo for lo in layouts if lo != "scan_major"] or ["precursor_major"]
+            for layout in layouts:
                 for w in args.workers if full else [max(args.workers)]:
                     entry = {"fraction": frac, "layout": layout, "workers": w, "reducer": "query_summary",
                              "sequences": int(subset.size), "targets": targets.num_rows,
