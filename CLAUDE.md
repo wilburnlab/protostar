@@ -65,6 +65,8 @@ protostar/
 │   └── osc.toml              # ESS/home paths, account
 ├── protostar/                # slim glue package over constellation — NO model code
 │   ├── bundles.py            # the ONLY way to locate/read proc/ bundles (v3 layout, refuses pre-v3)
+│   ├── search_space.py       # every PT sequence (ProForma, mass, composition) + global MS1 targets
+│   ├── pools.py              # stem → pool/injection, cross-dataset run order, per-run in-pool/off-pool labels
 │   ├── fetch/ convert/ library/ metadata/ intermediates/ experiments/
 ├── pipelines/                # CLI entry points + OSC/SLURM wrappers (one stage per file)
 │   ├── 00_fetch_raw.py            # fresh download + hash verify; --seed-from optional
