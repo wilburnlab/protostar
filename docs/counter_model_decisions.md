@@ -291,6 +291,56 @@ yet been validated across files.
 - **PI view (2026-11-20):** profile data would make interference easier to model, but aligning scans in
   RT is still a matching problem. For consolidating PT, use centroids with D9.
 
+## D18 — The extraction stores a superset; window, inclusion and zeros are fit-time choices
+
+- **Status:** Adopted (design, PI 2026-11-21); the choices themselves are **Under test** (P5).
+- **Claim:**
+  - The Tier-2 record holds every eligible MS1 scan over a wide window (the whole gradient for
+    in-pool peptides; the transferred RT ± 6 min for controls).
+  - Acquired-but-unmatched cells are kept as censored below the scan's floor. Unacquired cells are
+    missing.
+  - The record holds isotopes M−1..M+3 at z = 1–6, plus the MS2 scans covering the precursor, with
+    their MS1 brackets.
+  - Window width, which points enter the likelihood, and how zeros are scored are chosen when the
+    model is fitted, never when data are extracted.
+- **Evidence:**
+  - nb42b's ±60 s window truncated tails: 13/29 peptides had a tail constant above 55 s.
+  - nb42c's point selection collapsed tails, and its zero term overwhelmed the data term.
+  - [`extraction_design.md`](extraction_design.md) P4: the record costs 55–130 KB per (sequence, z)
+    for a whole gradient (about 1.8 TB for the corpus). With rule `nearest`, MS1 brackets are present
+    for 99.9% of MS2 scans.
+  - Off-pool windows of the same channels measure interference and background rates directly. They
+    are the calibration data for inclusion and zero handling.
+- **Constellation:** `extract_xic(rule="nearest", drop_unmatched=False)` today. `rule="all"` writes no
+  zero rows. A dedicated model-input reducer is specified in Constellation's
+  `docs/plans/global-extraction.md`.
+- **Next:** P5, after CR-A6, CR-B1 and CR-B2: fit N(t) at several window widths and zero treatments
+  on Tier-2 data, scored by off-pool false inclusion and replicate agreement.
+
+## D19 — In-pool / off-pool labels replace decoy FDR
+
+- **Status:** Adopted (PI, 2026-11-21).
+- **Claim:**
+  - ProteomeTools runs are synthetic pools of about 1,000 known peptides, so whether a sequence should
+    be present is known per run.
+  - Detection confidence comes from contrasting a sequence's evidence in its in-pool runs with its
+    evidence in the many runs where it is absent (`protostar.pools.labels_for_run`).
+  - Carryover (previous pools on the same instrument) and shadowing (composition twins, isobaric
+    sequences, Met oxidation, synthesis deletions of present peptides) are labelled separately, so the
+    null is clean.
+- **Evidence:**
+  - `ms1_scoring_test.py` (MS_Quant) already screened 1,071 in-pool against 10k off-pool peptides.
+  - [`extraction_design.md`](extraction_design.md) P2, 21 DDA runs: true in-pool regions vs clean
+    off-pool regions give AUC 0.91 for one feature (flux) and 0.965 for a combined score. Off-pool
+    sequences still produce 1.3–2.4 candidate regions each per run, so thresholds trade storage
+    against recall.
+  - At 20 ppm a real peptide has about 90 off-pool sequences of the same mass in the 825k space, so
+    RT and isotope shape carry the specificity.
+- **Next:**
+  - Refit the combined score per injection type.
+  - Set the off-pool threshold (95% vs 90% of true regions kept).
+  - Use the 1% sentinel set as the unbiased null.
+
 ---
 
 ## Change log
@@ -298,3 +348,4 @@ yet been validated across files.
 | Date | Change |
 |---|---|
 | 2026-11-20 | Log created from the restart review. Replaces the CLAUDE.md "canonical 7". D5 adopted by PI decision (Student-t; Poisson-only rejected). D6/D7 reclassified as heuristics. D4b and D4c corrected against the code and the nb42b output. |
+| 2026-11-23 | D18 (extraction stores a superset; window, inclusion, zeros at fit time) and D19 (in-pool/off-pool replaces decoy FDR) added from the extraction pilots. |

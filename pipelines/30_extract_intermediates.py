@@ -1,6 +1,9 @@
 #!/usr/bin/env python
 """Stage 30 — extract MS1 isotope chromatograms for the Counter-motivation figures.
 
+**Superseded (2026-11-23)** by the global extraction ([`docs/extraction_design.md`]): its Tier 2
+record replaces this stage's PSM-anchored, z = 1–4, ±60 s extraction. Kept until Tier 2 lands.
+
 For the seed peptides (PROCAL P1–P40 + the prior notebooks' known-clear examples)
 across the selected datasets' **non-ETD** acquisitions, extracts each MS1 survey
 scan's M+0/M+1/M+2 isotope intensities + signed m/z error over an RT window around
