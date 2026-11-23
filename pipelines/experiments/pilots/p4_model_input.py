@@ -3,7 +3,7 @@
 
 Tier 2 stores, for a bounded set of (run, sequence), every eligible MS1 scan, empty ones included,
 plus the MS2 scans whose isolation covers the envelope. This pilot extracts that record with
-today's API, ``extract_xic(levels=[1, 2], rule="all", drop_unmatched=False)``, for one pool's
+today's API, ``extract_xic(levels=[1, 2], rule="nearest", drop_unmatched=False)``, for one pool's
 peptides (z = 1..6, isotopes M−1..M+3, fragments b/y, or c/z for ETD, up to min(3, z−1)) in:
 
 - the pool's own runs (whole gradient);
@@ -20,6 +20,10 @@ Measured per run:
 - how many MS2 scans have their MS1 scan before and after inside the record (the brackets the
   MS1→MS2 model needs);
 - the share of each target's isotope envelope inside its MS2 scans' isolation windows.
+
+Rule ``nearest``, not ``all``: with ``all``, Constellation (6e47177) writes no zero rows, so MS1
+zero-filling is incomplete (75–1,319 of 3,230 scans per channel on a 3xHCD run, against 3,230 with
+``nearest``). Counting the peaks within tolerance therefore waits on Constellation.
 
 Outputs: ``p4_report.json`` and ``traces/<stem>.parquet`` (the combined record, for inspection).
 """
@@ -66,7 +70,7 @@ def _extract(bundle, targets, ion_types, ms2_tol, workers, spill):
     )
     t0 = time.monotonic()
     res = extract_xic(bundle, targets, acquisition_id=0, levels=[1, 2],
-                      tolerances={1: (20.0, "ppm"), 2: ms2_tol}, channels=channels, rule="all",
+                      tolerances={1: (20.0, "ppm"), 2: ms2_tol}, channels=channels, rule="nearest",
                       drop_unmatched=False, workers=workers, work_dir=spill, spill_dir=spill,
                       layout="precursor_major")  # fmt: skip
     path = spill / f"trace-{ms2_tol[0]}{ms2_tol[1]}.parquet"
