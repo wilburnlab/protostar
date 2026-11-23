@@ -85,6 +85,15 @@ def main() -> int:
     ap.add_argument("--half-window", type=float, default=360.0)
     ap.add_argument("--workers", type=int, default=16)
     ap.add_argument("--max-pep", type=float, default=0.01)
+    ap.add_argument(
+        "--limit-sequences", type=int, default=None, help="smoke tests: the first N sequences"
+    )
+    ap.add_argument(
+        "--limit-in-pool-runs",
+        type=int,
+        default=None,
+        help="smoke tests: the first N own-pool runs",
+    )
     args = ap.parse_args()
     (args.out / "traces").mkdir(parents=True, exist_ok=True)
     report: dict = {"provenance": bundles.constellation_provenance(),
@@ -109,6 +118,10 @@ def main() -> int:
     ids = np.union1d(
         index.pool(pool), np.flatnonzero(space.column("is_procal").to_numpy(zero_copy_only=False))
     )
+    if args.limit_sequences:
+        ids = ids[: args.limit_sequences]
+    if args.limit_in_pool_runs:
+        in_pool = in_pool[: args.limit_in_pool_runs]
     residues = space.column("residues").to_numpy(zero_copy_only=False)
     # each peptide's in-pool RT: median over the pool's runs of its best PSM
     tmp = Path(tempfile.mkdtemp(prefix="p4-", dir=os.environ.get("TMPDIR")))
