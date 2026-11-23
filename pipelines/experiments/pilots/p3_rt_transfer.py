@@ -136,6 +136,11 @@ def main() -> int:
     ap.add_argument("--refine", choices=["auto", "none"], default="auto")
     args = ap.parse_args()
     global REFINE
+    import torch
+
+    # rt.align fits are tiny: torch's default (one thread per core) made a 40-point fit 66 s on a
+    # 104-core node, against 0.04 s on one thread.
+    torch.set_num_threads(1)
     REFINE = None if args.refine == "none" else args.refine
     args.out.mkdir(parents=True, exist_ok=True)
     t_start = time.monotonic()
