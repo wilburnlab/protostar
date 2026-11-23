@@ -255,7 +255,9 @@ the data. The α̂(z) moment estimate (script 11) is confounded and is not to be
 
 **Next** (restart plan; the prep, records, v3 migration, Constellation hand-off and reconversion are
 done):
-1. The full 16-shard stage-30 run on v3 bundles.
+1. Global chromatogram extraction, replacing the 16-shard stage-30 run. The design and pilots are in
+   #27 (`docs/extraction_design.md`). The Constellation pieces are specified in Constellation's
+   `docs/plans/global-extraction.md`.
 2. Land the June backlog.
 3. Tests A–E (intensity likelihood, m/z offset level, space charge, binary interference state, MS1→MS2
    conversion). Tests A and B wait on the Constellation change requests (CR-B1, CR-C1).
