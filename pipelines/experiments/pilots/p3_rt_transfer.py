@@ -201,8 +201,10 @@ def main() -> int:
         if z is None:
             missing.append(s)
             continue
+        t0 = time.monotonic()
         psms = gate_psms(load_psms(z, extract_dir=tmp / s), max_pep=args.max_pep)
         obs[s] = best_rt(psms, s)
+        print(f"psms {s}: {len(obs[s])} sequences, {time.monotonic() - t0:.1f}s", flush=True)
     report["psm_runs"] = {"loaded": len(obs), "missing_zip": missing}
     save()
 
@@ -210,11 +212,14 @@ def main() -> int:
     procal_map = {}
     for s, o in obs.items():
         common = [q for q in procal if q in o]
+        t0 = time.monotonic()
         procal_map[s] = fit_map([procal[q] for q in common], [o[q] for q in common])
+        print(f"procal map {s}: {len(common)} anchors, {time.monotonic() - t0:.1f}s", flush=True)
     report["procal_maps"] = {
         "fitted": sum(m is not None for m in procal_map.values()),
         "runs": len(procal_map),
     }
+    save()
 
     # each run's identified sequences on the PROCAL reference clock, mapped in one call per run
     ref_of: dict[str, dict[str, float]] = {}
@@ -252,12 +257,17 @@ def main() -> int:
         base_obs = [o[q] for q in procal if q in o] + [o[q] for q in anchors]
         pred_r = np.full(len(seqs), np.nan)
         fold = np.arange(len(seqs)) % args.folds
+        t0 = time.monotonic()
         for f in range(args.folds):
             train = fold != f
             m = fit_map(base_ref + ref[train].tolist(), base_obs + truth[train].tolist())
             if m is not None:
                 pred_r[fold == f] = m.to_observed(ref[fold == f]).numpy()
         inj = rows[run]["injection"]
+        print(
+            f"{regime} {run}: {len(seqs)} evaluated, {len(anchors)} anchors, {time.monotonic() - t0:.1f}s",
+            flush=True,
+        )
         for q, r_, t_, a_, b_ in zip(seqs, ref, truth, pred_p, pred_r, strict=True):
             out_rows.append({"regime": regime, "run": run, "injection": inj, "sequence": q,
                              "reference_rt": r_, "observed_rt": t_,
