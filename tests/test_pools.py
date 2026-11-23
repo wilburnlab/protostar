@@ -211,3 +211,32 @@ def test_labels_shadow_kinds_can_be_switched_off(runs):
     )
     kinds = {r["kind"] for r in labels.to_pylist() if r["label"] == "shadowed"}
     assert kinds == {"composition"}
+
+
+def test_search_zip_for_stem(tmp_path):
+    z = tmp_path / "search" / "Zolg2017"
+    z.mkdir(parents=True)
+    (z / "TUM_first_pool_1_01_01_DDA-1h-R2-tryptic.zip").write_bytes(b"")
+    (z / "TUM_first_pool_1_01_01_DDA-1h-R1-tryptic.zip").write_bytes(b"")
+    (z / "TUM_first_pool_107_01_01_DDA-1hnoincl-R2-semitryptic.zip").write_bytes(b"")
+    g = tmp_path / "search" / "Gessulat2019"
+    g.mkdir(parents=True)
+    (g / "01974C_BA1-TUM_missing_first_1_01_01-DDA-1h-R4.zip").write_bytes(b"")
+    hit = pools.search_zip_for_stem(
+        tmp_path, "Zolg2017", "01625b_GA1-TUM_first_pool_1_01_01-DDA-1h-R2"
+    )
+    assert hit.name == "TUM_first_pool_1_01_01_DDA-1h-R2-tryptic.zip"
+    noincl = pools.search_zip_for_stem(
+        tmp_path, "Zolg2017", "03100_GF1-TUM_first_pool_107_01_01-DDA-1hnoincl-R2"
+    )
+    assert noincl.name.endswith("noincl-R2-semitryptic.zip")
+    gess = pools.search_zip_for_stem(
+        tmp_path, "Gessulat2019", "01974c_BA1-TUM_missing_first_1_01_01-DDA-1h-R4"
+    )
+    assert gess.name.startswith("01974C")
+    assert (
+        pools.search_zip_for_stem(
+            tmp_path, "Zolg2017", "01625b_GA1-TUM_first_pool_1_01_01-ETD-1h-R2"
+        )
+        is None
+    )

@@ -107,6 +107,30 @@ def parse_stem(stem: str) -> RunName:
     )
 
 
+def search_zip_for_stem(data_root: str | Path, dataset: str, stem: str) -> Path | None:
+    """The MaxQuant search zip of one run, or ``None`` if there is none.
+
+    Zolg2017 and Wilhelm2021 name a search after the pool and injection
+    (``TUM_first_pool_1_01_01_DDA-1h-R2-tryptic.zip``; the enzyme suffix varies); Gessulat2019
+    names it after the ``.raw`` stem, sometimes in a different letter case."""
+    sdir = Path(data_root) / "search" / dataset
+    if not sdir.is_dir():
+        return None
+    name = parse_stem(stem)
+    by_lower = {z.name.lower(): z for z in sdir.glob("*.zip")}
+    hit = by_lower.get(f"{name.stem}.zip".lower())
+    if hit is not None:
+        return hit
+    prefix = (
+        f"{name.pool}_{name.pool_part}_{name.injection}-{name.gradient}"
+        f"{'noincl' if name.noincl else ''}-R{name.replicate}-"
+    ).lower()
+    hits = sorted(z for k, z in by_lower.items() if k.startswith(prefix))
+    if len(hits) > 1:
+        raise ValueError(f"several search zips match {stem!r}: {[h.name for h in hits]}")
+    return hits[0] if hits else None
+
+
 RUN_TABLE: pa.Schema = pa.schema(
     [
         pa.field("dataset", pa.string(), nullable=False),
@@ -410,4 +434,5 @@ __all__ = [
     "previous_pools",
     "run_table",
     "run_table_from_acquisitions",
+    "search_zip_for_stem",
 ]
