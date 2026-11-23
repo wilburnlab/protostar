@@ -85,6 +85,10 @@ def best_rt(psms: pa.Table, stem: str) -> dict[str, float]:
     return out
 
 
+#: rt.align's refinement ("auto": modal, about 6.5 s a fit; None: about 0.1 s, nearly the same fit).
+REFINE: str | None = "auto"
+
+
 def fit_map(ref: list[float], obs: list[float]):
     from constellation.massspec.rt import align
 
@@ -95,7 +99,7 @@ def fit_map(ref: list[float], obs: list[float]):
         {"reference_rt": np.asarray(ref)[order], "observed_rt": np.asarray(obs)[order]}
     )
     try:
-        return align(pairs)
+        return align(pairs, refine=REFINE)
     except Exception:  # noqa: BLE001 - a run whose anchors cannot be fitted is reported as such
         return None
 
@@ -129,7 +133,10 @@ def main() -> int:
     ap.add_argument("--noincl-runs", type=int, default=2)
     ap.add_argument("--max-pep", type=float, default=0.01)
     ap.add_argument("--folds", type=int, default=5)
+    ap.add_argument("--refine", choices=["auto", "none"], default="auto")
     args = ap.parse_args()
+    global REFINE
+    REFINE = None if args.refine == "none" else args.refine
     args.out.mkdir(parents=True, exist_ok=True)
     t_start = time.monotonic()
     report: dict = {
@@ -209,12 +216,17 @@ def main() -> int:
         "runs": len(procal_map),
     }
 
+    # each run's identified sequences on the PROCAL reference clock, mapped in one call per run
+    ref_of: dict[str, dict[str, float]] = {}
+    for s_, o in obs.items():
+        if procal_map.get(s_) is None or not o:
+            continue
+        seqs_ = list(o)
+        mapped = procal_map[s_].to_reference(np.array([o[q] for q in seqs_])).numpy()
+        ref_of[s_] = dict(zip(seqs_, mapped.tolist(), strict=True))
+
     def ref_rt(seq: str, from_stems: list[str]) -> float | None:
-        vals = [
-            float(procal_map[f].to_reference(np.array([obs[f][seq]]))[0])
-            for f in from_stems
-            if f in obs and seq in obs[f] and procal_map.get(f) is not None
-        ]
+        vals = [ref_of[f][seq] for f in from_stems if f in ref_of and seq in ref_of[f]]
         return float(np.median(vals)) if vals else None
 
     out_rows = []
