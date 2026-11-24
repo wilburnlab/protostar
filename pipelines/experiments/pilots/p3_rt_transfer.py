@@ -49,7 +49,7 @@ import pyarrow.parquet as pq  # noqa: E402
 
 from protostar import bundles, pools  # noqa: E402
 from protostar import search_space as ss  # noqa: E402
-from protostar.experiments.scans import gate_psms, load_psms  # noqa: E402
+from protostar.experiments.scans import gate_psms, load_psms, unmodified_only  # noqa: E402
 from protostar.peptides.procal import load_procal  # noqa: E402
 
 CENTER = "01625b_GA1-TUM_first_pool_1_01_01-DDA-1h-R2"
@@ -70,9 +70,12 @@ def procal_reference_s() -> dict[str, float]:
 
 
 def best_rt(psms: pa.Table, stem: str) -> dict[str, float]:
-    """Bare sequence → RT (s) of its best PSM (lowest PEP) in ``stem``."""
+    """Bare sequence → RT (s) of the best PSM (lowest PEP) of its *unmodified* form in ``stem``.
+
+    Variable-modified forms (Met oxidation) elute elsewhere; until 2026-11-23 they were counted as
+    the peptide itself, which put the truth on the wrong peak for many Met-containing sequences."""
     raw = pc.utf8_lower(psms.column("raw_file"))
-    psms = psms.filter(pc.equal(raw, stem.lower()))
+    psms = unmodified_only(psms.filter(pc.equal(raw, stem.lower())))
     order = pc.sort_indices(psms, sort_keys=[("pep", "ascending"), ("score", "descending")])
     out: dict[str, float] = {}
     for s, rt in zip(

@@ -51,7 +51,7 @@ import pyarrow as pa  # noqa: E402
 import pyarrow.parquet as pq  # noqa: E402
 
 from protostar import bundles, pools  # noqa: E402
-from protostar.experiments.scans import gate_psms, load_psms  # noqa: E402
+from protostar.experiments.scans import gate_psms, load_psms, unmodified_only  # noqa: E402
 
 ALPHA_PER_CHARGE = 10.0  # seconds convention; rough (Hsu et al. 2025; nb42b)
 TOP_K = 5
@@ -99,19 +99,64 @@ def row_features(
     return out
 
 
+def _valley_cuts(w: np.ndarray, valley_frac: float) -> list[int]:
+    """Positions after which a region of flux values ``w`` (in scan order) splits: the lowest point
+    between two local maxima of the smoothed trace, where it falls below ``valley_frac`` of the
+    smaller maximum."""
+    if w.size < 5:
+        return []
+    sm = np.convolve(w, np.ones(3) / 3, mode="same")
+    peaks = [
+        i
+        for i in range(sm.size)
+        if (i == 0 or sm[i] > sm[i - 1]) and (i == sm.size - 1 or sm[i] >= sm[i + 1])
+    ]
+    cuts = []
+    for a, b in zip(peaks, peaks[1:], strict=False):
+        j = a + int(np.argmin(sm[a : b + 1]))
+        if sm[j] < valley_frac * min(sm[a], sm[b]):
+            cuts.append(j)
+    return cuts
+
+
 def regions(
-    feat: pd.DataFrame, ordinal: dict, kl_max: float, e_max: float, gap: int
+    feat: pd.DataFrame,
+    ordinal: dict,
+    kl_max: float,
+    e_max: float,
+    gap: int,
+    m1_max: float = np.inf,
+    split: bool = False,
+    valley_frac: float = 0.5,
 ) -> pd.DataFrame:
-    """Every region of qualifying scans (gaps of at most ``gap`` MS1 scans), with its statistics."""
-    q = feat[(feat["kl"] <= kl_max) & (feat["e_mean"].abs() <= e_max)].copy()
+    """Every region of qualifying scans (gaps of at most ``gap`` MS1 scans), with its statistics.
+
+    A scan qualifies with KL ≤ ``kl_max``, |offset-corrected ppm| ≤ ``e_max`` and an M−1 / max ratio
+    ≤ ``m1_max`` (a large M−1 means the signal is another species' M+1). With ``split``, a region
+    is cut at valleys between peaks (``_valley_cuts``)."""
+    q = feat[
+        (feat["kl"] <= kl_max) & (feat["e_mean"].abs() <= e_max) & (feat["m1_ratio"] <= m1_max)
+    ].copy()
     if q.empty:
         return pd.DataFrame()
     q["ord"] = q["scan"].map(ordinal)
     q = q.dropna(subset=["ord"]).sort_values(["target_id", "ord"])
     q["ord"] = q["ord"].astype(int)
     new = (q["target_id"] != q["target_id"].shift()) | (q["ord"] - q["ord"].shift() > gap + 1)
-    q["region"] = new.cumsum()
     q["w"] = q["flux"] * np.exp(-q["kl"])
+    if split:
+        new = new.to_numpy().copy()
+        starts = np.flatnonzero(new)
+        ends = np.append(starts[1:], new.size)
+        w = q["w"].to_numpy()
+        for a, b in zip(starts, ends, strict=True):
+            if b - a >= 5:
+                for c in _valley_cuts(w[a:b], valley_frac):
+                    if a + c + 1 < b:
+                        new[a + c + 1] = True
+        q["region"] = np.cumsum(new)
+    else:
+        q["region"] = new.cumsum()
     q["abs_dev_e"] = (q["e_mean"] - q.groupby("region")["e_mean"].transform("median")).abs()
     g = q.groupby("region")
     agg = g.agg(
@@ -138,11 +183,15 @@ def regions(
     return agg.reset_index(drop=True)
 
 
-def top_regions(agg: pd.DataFrame, m_min: int) -> pd.DataFrame:
-    """Regions with at least ``m_min`` qualifying scans, the best ``TOP_K`` per query."""
+def top_regions(agg: pd.DataFrame, m_min: int, keep_all: set | None = None) -> pd.DataFrame:
+    """Regions with at least ``m_min`` qualifying scans: every one for targets in ``keep_all``
+    (in-pool, standard, carryover), the best ``TOP_K`` per query for the rest."""
     r = agg[agg["n_qual"] >= m_min].sort_values(["target_id", "score"], ascending=[True, False])
     r = r.assign(rank=r.groupby("target_id").cumcount() + 1)
-    return r[r["rank"] <= TOP_K].reset_index(drop=True)
+    keep = r["rank"] <= TOP_K
+    if keep_all:
+        keep |= r["target_id"].isin(keep_all)
+    return r[keep].reset_index(drop=True)
 
 
 def auc(pos: np.ndarray, neg: np.ndarray) -> float | None:
@@ -159,18 +208,26 @@ def main() -> int:
     ap.add_argument("--data-root", required=True, type=Path)
     ap.add_argument("--rows-dir", required=True, type=Path, help="p2_screen_rows.py --out")
     ap.add_argument("--space-cache", type=Path, required=True)
-    ap.add_argument("--kl-max", nargs="+", type=float, default=[0.1, 0.5, np.inf])
-    ap.add_argument("--e-max", nargs="+", type=float, default=[10.0, 20.0])
+    ap.add_argument("--kl-max", nargs="+", type=float, default=[0.1])
+    ap.add_argument("--e-max", nargs="+", type=float, default=[3.0, 5.0, 10.0])
+    ap.add_argument("--m1-max", nargs="+", type=float, default=[np.inf, 0.3])
+    ap.add_argument("--split", nargs="+", type=int, default=[0, 1], help="valley splitting off/on")
+    ap.add_argument("--valley-frac", type=float, default=0.5)
+    ap.add_argument("--save", nargs="*", default=["kl0.1_e10.0_m1inf_s0_g2_m3", "kl0.1_e5.0_m10.3_s1_g2_m3",
+                    "kl0.1_e3.0_m10.3_s1_g2_m3", "kl0.1_e5.0_m10.3_s1_g2_m2"],
+                    help="settings whose candidate regions are written for the combined score and the viewer")  # fmt: skip
     ap.add_argument("--gap", nargs="+", type=int, default=[2])
-    ap.add_argument("--m-min", nargs="+", type=int, default=[2, 3, 5])
+    ap.add_argument("--m-min", nargs="+", type=int, default=[2, 3])
     ap.add_argument(
-        "--full-targets", type=float, default=2.70e6, help="targets per run in the full screen"
+        "--full-targets",
+        type=float,
+        default=2_476_934,
+        help="targets per run in the full screen (P1)",
     )
     ap.add_argument("--max-pep", type=float, default=0.01)
     args = ap.parse_args()
 
     out_dir = args.rows_dir
-    (out_dir / "p2_candidates").mkdir(exist_ok=True)
     space = pq.read_table(args.space_cache)
     seq_res = space.column("residues").to_numpy(zero_copy_only=False)
     targets = pq.read_table(out_dir / "targets.parquet").to_pandas()
@@ -181,7 +238,8 @@ def main() -> int:
     procal_ids = set(
         np.flatnonzero(space.column("is_procal").to_numpy(zero_copy_only=False)).tolist()
     )
-    settings = list(product(args.kl_max, args.e_max, args.gap, args.m_min))
+    settings = list(product(args.kl_max, args.e_max, args.m1_max, args.split, args.gap, args.m_min))
+    name_of = lambda st: "kl{}_e{}_m1{}_s{}_g{}_m{}".format(*st)  # noqa: E731
     report: dict = {"provenance": bundles.constellation_provenance(), "settings": {}, "runs": {}}
     stems = sorted(p.stem for p in (out_dir / "rows").glob("*.parquet"))
     # identifications per run (truth for recall), and each sequence's own-pool RT (for carryover/shadow)
@@ -191,7 +249,9 @@ def main() -> int:
         z = pools.search_zip_for_stem(args.data_root, rowsmeta[stem]["dataset"], stem)
         if z is None:
             continue
-        psms = gate_psms(load_psms(z, extract_dir=tmp / stem), max_pep=args.max_pep).to_pandas()
+        psms = unmodified_only(
+            gate_psms(load_psms(z, extract_dir=tmp / stem), max_pep=args.max_pep)
+        ).to_pandas()
         psms = psms[psms["raw_file"].str.lower() == stem.lower()].sort_values(
             ["pep", "score"], ascending=[True, False]
         )
@@ -244,12 +304,30 @@ def main() -> int:
         truth_df = pd.DataFrame({"sid": list(truth), "psm_rt": list(truth.values())})
         truth_df["label"] = truth_df["sid"].map(labels["label"]).fillna("off_pool")
         truth_df["is_procal"] = truth_df["sid"].isin(procal_ids)
-        for kl_max, e_max, gap in product(args.kl_max, args.e_max, args.gap):
-            base = regions(feat, ordinal, kl_max, e_max, gap)
+        keep_all = set(
+            targets[
+                targets["peptide_id"].isin(
+                    labels.index[labels["label"].isin(["in_pool", "standard", "carryover"])]
+                )
+            ]["target_id"]
+        )
+        for kl_max, e_max, m1_max, sp, gap in product(
+            args.kl_max, args.e_max, args.m1_max, args.split, args.gap
+        ):
+            base = regions(
+                feat,
+                ordinal,
+                kl_max,
+                e_max,
+                gap,
+                m1_max=m1_max,
+                split=bool(sp),
+                valley_frac=args.valley_frac,
+            )
             for m_min in args.m_min:
-                s = (kl_max, e_max, gap, m_min)
+                s = (kl_max, e_max, m1_max, sp, gap, m_min)
                 acc = per_setting[s]
-                reg = top_regions(base, m_min) if len(base) else base
+                reg = top_regions(base, m_min, keep_all) if len(base) else base
                 acc["rows"] += len(reg)
                 if reg.empty:
                     continue
@@ -292,14 +370,12 @@ def main() -> int:
                     coinc = np.abs(src_rt - sh["apex_rt"].to_numpy()) <= 30
                     acc["shadow_rt"][0] += int(np.nansum(coinc))
                     acc["shadow_rt"][1] += len(sh)
-                if s == (
-                    args.kl_max[-1],
-                    args.e_max[-1],
-                    args.gap[0],
-                    args.m_min[0],
-                ):  # loosest: keep for inspection
-                    pq.write_table(pa.Table.from_pandas(reg, preserve_index=False),
-                                   out_dir / "p2_candidates" / f"{stem}.parquet")  # fmt: skip
+                if name_of(s) in args.save:
+                    cdir = out_dir / "p2_candidates" / name_of(s)
+                    cdir.mkdir(parents=True, exist_ok=True)
+                    pq.write_table(
+                        pa.Table.from_pandas(reg, preserve_index=False), cdir / f"{stem}.parquet"
+                    )
         print(stem, json.dumps(report["runs"][stem], default=str), flush=True)
 
     n_runs = max(len(stems), 1)
@@ -313,7 +389,7 @@ def main() -> int:
             for f in FEATURES
         }
         null_per_query = acc["null_rows"] / max(acc["null_queries"], 1)
-        report["settings"]["kl{}_e{}_g{}_m{}".format(*s)] = {
+        report["settings"][name_of(s)] = {
             "recall_in_pool": round(acc["recall_hit"] / max(acc["recall_n"], 1), 4),
             "n_in_pool_ids": acc["recall_n"],
             "recall_procal": round(acc["procal_hit"] / max(acc["procal_n"], 1), 4),

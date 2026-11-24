@@ -136,3 +136,17 @@ def test_replicate_groups():
     }
     assert groups[("AAA", 2, "FTMS_HCD")].num_rows == 2
     assert groups[("AAA", 2, "ITMS_CID")].num_rows == 1
+
+
+def test_unmodified_only_drops_variable_mods_keeps_fixed():
+    t = _psms(
+        [
+            {"sequence": "AFLDEMK", "modified_sequence": "AFLDEMK"},
+            {"sequence": "AFLDEMK", "modified_sequence": "AFLDEM[UNIMOD:35]K"},
+            {"sequence": "ALQIFCR", "modified_sequence": "ALQIFC[UNIMOD:4]R"},
+            {"sequence": "PEPTIDEK", "modified_sequence": "[UNIMOD:1]-PEPTIDEK"},
+            {"sequence": "PEPTIDEK", "modified_sequence": None},
+        ]
+    )
+    kept = scans.unmodified_only(t).column("modified_sequence").to_pylist()
+    assert kept == ["AFLDEMK", "ALQIFC[UNIMOD:4]R"]
