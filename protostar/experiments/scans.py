@@ -13,6 +13,7 @@ enrichment from ``scan_metadata``.
 
 from __future__ import annotations
 
+import re
 import zipfile
 from collections import defaultdict
 from collections.abc import Iterator, Sequence
@@ -88,6 +89,26 @@ def gate_psms(
     return psms.filter(pc.fill_null(mask, False))
 
 
+#: Modifications every PSM of these searches carries by design (carbamidomethyl C).
+FIXED_MODIFICATIONS: tuple[str, ...] = ("UNIMOD:4",)
+
+_MOD_TOKEN = re.compile(r"\[([^\]]+)\]")
+
+
+def unmodified_only(psms: pa.Table, *, fixed: Sequence[str] = FIXED_MODIFICATIONS) -> pa.Table:
+    """PSMs of the unmodified peptide: every modification in ``modified_sequence`` is a fixed one.
+
+    A bare ``sequence`` also matches its variable-modified forms (Met oxidation, N-terminal
+    acetylation), which elute elsewhere. Retention-time truth taken from them lands on the wrong
+    peak, so truth for an unmodified target uses this first."""
+    allowed = set(fixed)
+    keep = [
+        ms is not None and all(t in allowed for t in _MOD_TOKEN.findall(ms))
+        for ms in psms.column("modified_sequence").to_pylist()
+    ]
+    return psms.filter(pa.array(keep, pa.bool_()))
+
+
 def tag_calibrants(psms: pa.Table, *, dataset: str | None = None) -> pa.Table:
     """Append ``is_procal`` (and, when ``dataset`` given, ``is_qc``) by bare-AA
     sequence membership — annotations, not a filter (the analysis set stays
@@ -153,4 +174,6 @@ __all__ = [
     "tag_calibrants",
     "select_recurring_peptides",
     "replicate_groups",
+    "unmodified_only",
+    "FIXED_MODIFICATIONS",
 ]
